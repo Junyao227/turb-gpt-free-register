@@ -9,6 +9,7 @@
 
 当前支持：
     - GrizzlySMS：GET 文本接口，文档 https://api.grizzlysms.com
+    - SMSBower：兼容 handler_api.php 的 GET 文本接口
     - L：本地 JSON 管理接口，文档 L_API.md
     - H：本地 JSON 管理接口，文档 H_API.md
 
@@ -18,6 +19,7 @@
 """
 import json
 import logging
+import os
 import threading
 import time
 from urllib.parse import urljoin
@@ -66,17 +68,61 @@ def _provider() -> str:
     return str(getattr(_cfg, "SMS_PROVIDER", "grizzly") or "grizzly").strip().lower()
 
 
-def _request_grizzly(http: CurlSession, params: dict) -> str:
+def _handler_name() -> str:
+    return {
+        "grizzly": "GrizzlySMS",
+        "smsbower": "SMSBower",
+    }.get(_provider(), "Handler API")
+
+
+def _provider_setting(
+    primary_key: str,
+    legacy_key: str,
+    default: str = "",
+    *,
+    split_handler_config: bool = False,
+) -> str:
+    """Read a provider-specific setting while retaining legacy SMS_* compatibility."""
+    if os.getenv(primary_key) is not None:
+        return str(getattr(_cfg, primary_key, default) or "").strip()
+    if split_handler_config and any(
+        os.getenv(key) is not None
+        for key in ("GRIZZLY_SMS_API_KEY", "SMSBOWER_API_KEY")
+    ):
+        return str(getattr(_cfg, primary_key, default) or default).strip()
+    if os.getenv(legacy_key) is not None:
+        return str(getattr(_cfg, legacy_key, default) or "").strip()
+    return str(getattr(_cfg, primary_key, default) or default).strip()
+
+
+def _handler_settings() -> dict[str, str]:
+    prefix = "SMSBOWER" if _provider() == "smsbower" else "GRIZZLY_SMS"
+    default_base = (
+        "https://smsbower.page/stubs/handler_api.php"
+        if prefix == "SMSBOWER"
+        else "https://api.grizzlysms.com/stubs/handler_api.php"
+    )
+    return {
+        "base_url": _provider_setting(f"{prefix}_API_BASE", "SMS_API_BASE", default_base, split_handler_config=True),
+        "api_key": _provider_setting(f"{prefix}_API_KEY", "SMS_API_KEY", split_handler_config=True),
+        "country": _provider_setting(f"{prefix}_COUNTRY", "SMS_COUNTRY", split_handler_config=True),
+        "service": _provider_setting(f"{prefix}_SERVICE", "SMS_SERVICE", split_handler_config=True),
+        "max_price": _provider_setting(f"{prefix}_MAX_PRICE", "SMS_MAX_PRICE", split_handler_config=True),
+    }
+
+
+def _request_handler(http: CurlSession, params: dict) -> str:
     """
-    发一个 GrizzlySMS API 请求，返回去空白的响应文本。
+    发一个标准 handler_api.php 请求，返回去空白的响应文本。
     统一识别公共错误码并抛对应异常。
     """
-    base_params = {"api_key": _cfg.SMS_API_KEY}
+    settings = _handler_settings()
+    base_params = {"api_key": settings["api_key"]}
     base_params.update(params)
-    resp = http.get(_cfg.SMS_API_BASE, params=base_params)
+    resp = http.get(settings["base_url"], params=base_params)
     if resp.status_code != 200:
         raise SmsProviderError(
-            f"GrizzlySMS HTTP {resp.status_code}: {(resp.text or '')[:200]}"
+            f"{_handler_name()} HTTP {resp.status_code}: {(resp.text or '')[:200]}"
         )
     text = (resp.text or "").strip()
 
@@ -323,12 +369,15 @@ def acquire_number(
     http = http or _http()
     try:
         if _provider() == "l":
+            l_service = _provider_setting("L_SERVICE", "SMS_SERVICE")
+            l_country = _provider_setting("L_COUNTRY", "SMS_COUNTRY")
+            l_max_price = _provider_setting("L_MAX_PRICE", "SMS_MAX_PRICE")
             payload = {
-                "service": service or _cfg.SMS_SERVICE,
-                "country": country or _cfg.SMS_COUNTRY,
+                "service": service or l_service,
+                "country": country or l_country,
             }
-            if _cfg.SMS_MAX_PRICE:
-                payload["maxPrice"] = _cfg.SMS_MAX_PRICE
+            if l_max_price:
+                payload["maxPrice"] = l_max_price
 
             data = _post_l_json(http, "/api/admin/l/take-phone", payload)
             item = data.get("item") or {}
@@ -348,14 +397,12 @@ def acquire_number(
             return activation_id, phone
 
         if _provider() == "h":
-            # H_API 使用 projectId + country；统一复用 SMS_SERVICE / SMS_COUNTRY，
-            # 避免接码平台之间出现重复的“服务/国家”配置。
-            project_id = str(service or _cfg.SMS_SERVICE).strip()
-            h_country = str(country or _cfg.SMS_COUNTRY).strip()
+            project_id = str(service or _provider_setting("H_PROJECT_ID", "SMS_SERVICE")).strip()
+            h_country = str(country or _provider_setting("H_COUNTRY", "SMS_COUNTRY")).strip()
             if not project_id:
-                raise SmsProviderError("H projectId 不能为空：请填写 SMS_SERVICE")
+                raise SmsProviderError("H projectId 不能为空：请填写 H_PROJECT_ID")
             if not h_country:
-                raise SmsProviderError("H country 不能为空：请填写 SMS_COUNTRY")
+                raise SmsProviderError("H country 不能为空：请填写 H_COUNTRY")
             payload = {
                 "projectId": project_id,
                 "country": h_country,
@@ -382,15 +429,16 @@ def acquire_number(
             )
             return activation_id, phone
 
+        handler = _handler_settings()
         params = {
             "action": "getNumber",
-            "service": service or _cfg.SMS_SERVICE,
-            "country": country or _cfg.SMS_COUNTRY,
+            "service": service or handler["service"],
+            "country": country or handler["country"],
         }
-        if _cfg.SMS_MAX_PRICE:
-            params["maxPrice"] = _cfg.SMS_MAX_PRICE
+        if handler["max_price"]:
+            params["maxPrice"] = handler["max_price"]
 
-        text = _request_grizzly(http, params)
+        text = _request_handler(http, params)
         # 成功格式：ACCESS_NUMBER:激活ID:号码
         if not text.startswith("ACCESS_NUMBER:"):
             raise SmsProviderError(f"getNumber 非预期响应：{text[:200]}")
@@ -481,7 +529,7 @@ def wait_for_sms_code(
                 time.sleep(interval)
                 continue
 
-            text = _request_grizzly(http, {"action": "getStatus", "id": activation_id})
+            text = _request_handler(http, {"action": "getStatus", "id": activation_id})
 
             if text.startswith("STATUS_OK:"):
                 code = text.split(":", 1)[1].strip()
@@ -518,7 +566,7 @@ def set_status(activation_id: str, status: int, http: CurlSession | None = None)
         if _provider() == "l":
             logger.debug(f"[SMS:L] 忽略状态设置 id={activation_id}, status={status}")
             return "OK"
-        return _request_grizzly(http, {"action": "setStatus", "status": str(status), "id": activation_id})
+        return _request_handler(http, {"action": "setStatus", "status": str(status), "id": activation_id})
     finally:
         if own_http:
             http.close()
@@ -544,9 +592,9 @@ def complete(activation_id: str, http: CurlSession | None = None) -> None:
 
 
 def _do_cancel_sync(activation_id: str, http_factory) -> None:
-    """实际的同步取消逻辑：等够 2 分钟限制 → 发请求 → 失败重试一次。"""
+    """实际的同步取消逻辑：处理平台等待限制后发请求，失败重试一次。"""
     acquired_at = _ACQUIRED_AT.get(activation_id)
-    if acquired_at is not None:
+    if _provider() == "grizzly" and acquired_at is not None:
         elapsed = time.time() - acquired_at
         if elapsed < _MIN_CANCEL_DELAY:
             wait = _MIN_CANCEL_DELAY - elapsed
@@ -584,8 +632,8 @@ def cancel(activation_id: str, http: CurlSession | None = None, background: bool
     """
     取消激活（status=8），释放号码避免白扣费。
 
-    GrizzlySMS 规则：号码取出后约 2 分钟内不允许取消。本函数默认 background=True，
-    把"等 2 分钟+取消"放到后台守护线程里执行，主流程立刻返回继续走（如换下一个号），
+    GrizzlySMS 规则：号码取出后约 2 分钟内不允许取消；SMSBower 直接取消。本函数默认 background=True，
+    把平台等待和取消放到后台守护线程里执行，主流程立刻返回继续走（如换下一个号），
     避免被这 2 分钟阻塞。
 
     background=False 时同步等够时间再返回（少数场景需要确认取消完成时用）。

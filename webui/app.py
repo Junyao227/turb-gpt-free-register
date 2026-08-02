@@ -2262,6 +2262,67 @@ def create_app(auth_code: str | None = None) -> Flask:
     def api_config_get():
         return jsonify(config_editor.get_config())
 
+    def _smsbower_client(data: dict):
+        from config import codex as codex_config
+        from core.smsbower_client import SmsBowerClient
+
+        api_key = str(
+            data.get("api_key")
+            or getattr(codex_config, "SMSBOWER_API_KEY", "")
+            or getattr(codex_config, "SMS_API_KEY", "")
+            or ""
+        ).strip()
+        base_url = str(
+            data.get("base_url")
+            or getattr(codex_config, "SMSBOWER_API_BASE", "")
+            or "https://smsbower.page/stubs/handler_api.php"
+        ).strip()
+        timeout = data.get("timeout") or getattr(codex_config, "SMS_REQUEST_TIMEOUT", 20) or 20
+        return SmsBowerClient(api_key, base_url=base_url, timeout=int(timeout))
+
+    def _smsbower_error(exc: Exception):
+        logger.warning("SMSBower 元数据查询失败: %s", exc)
+        status = 400 if isinstance(exc, (TypeError, ValueError)) else 502
+        return jsonify({"ok": False, "error": str(exc)}), status
+
+    @app.post("/api/smsbower/balance")
+    def api_smsbower_balance():
+        data = request.get_json(silent=True) or {}
+        try:
+            return jsonify({"ok": True, "balance": _smsbower_client(data).get_balance()})
+        except Exception as exc:
+            return _smsbower_error(exc)
+
+    @app.post("/api/smsbower/countries")
+    def api_smsbower_countries():
+        data = request.get_json(silent=True) or {}
+        try:
+            countries = _smsbower_client(data).get_countries()
+            return jsonify({"ok": True, "countries": countries, "count": len(countries)})
+        except Exception as exc:
+            return _smsbower_error(exc)
+
+    @app.post("/api/smsbower/services")
+    def api_smsbower_services():
+        data = request.get_json(silent=True) or {}
+        try:
+            services = _smsbower_client(data).get_services(country=str(data.get("country") or "").strip())
+            return jsonify({"ok": True, "services": services, "count": len(services)})
+        except Exception as exc:
+            return _smsbower_error(exc)
+
+    @app.post("/api/smsbower/prices")
+    def api_smsbower_prices():
+        data = request.get_json(silent=True) or {}
+        try:
+            summary = _smsbower_client(data).get_price_summary(
+                country=str(data.get("country") or "").strip(),
+                service=str(data.get("service") or "").strip(),
+            )
+            return jsonify({"ok": True, **summary})
+        except Exception as exc:
+            return _smsbower_error(exc)
+
     @app.post("/api/cloudmail/gen-token")
     def api_cloudmail_gen_token():
         """手动生成 CloudMail Authorization Token，并把本次填写的 CloudMail 配置一并写入 .env。"""

@@ -69,7 +69,9 @@ EMAIL_SOURCE = "outlook,generic_api"
 - 支持 CPA 管理接口生成授权 URL，并提交 OAuth callback。
 - 支持接码平台：
   - GrizzlySMS
+  - SMSBower
   - 本地 L 取号服务，见 `L_API.md`
+  - 本地 H 取号服务，见 `H_API.md`
 - 手机验证支持自动取号、填号、收码、提交、失败换号重试。
 - Codex 凭证落盘到 `codex_accounts/`。
 
@@ -369,8 +371,13 @@ pip install playwright
 ```python
 PROXY_POOL = [
     "http://user:pass@host:port",
+    "user:pass@host:port",
+    "http://host:port:user:pass",
+    "host:port:user:pass",
 ]
 ```
+
+以上格式会在使用前统一转换成标准代理 URL；支持 `http`、`https`、`socks5`、`socks5h` 协议。四段格式中的密码可以包含冒号。
 
 Roxy 一号一环境开启 `ROXY_CREATE_USE_PROXY_POOL=True` 时，会从这里随机取代理写入 Roxy Profile。
 
@@ -395,20 +402,35 @@ CODEX_OAUTH_DRIVER = "browser_use"  # 可选 protocol / roxy / cloak / browser_u
 接码配置在 `config/codex.py`：
 
 ```python
-SMS_PROVIDER = "l"        # 可选 grizzly / l / h
-SMS_API_KEY = "你的 GrizzlySMS key"  # 仅 GrizzlySMS 需要
-SMS_SERVICE = "openai"
-SMS_COUNTRY = "国家代码"
+SMS_PROVIDER = "l"        # 可选 grizzly / smsbower / l / h
 SMS_MAX_RETRIES = 10
 SMS_CODE_WAIT = 120
 SMS_POLL_INTERVAL = 5
+SMS_REQUEST_TIMEOUT = 30
 
-# 若 SMS_PROVIDER="h"，H 固定复用：
-#   SMS_SERVICE -> H projectId
-#   SMS_COUNTRY -> H country
 H_API_BASE = "http://localhost:8788"
 H_ADMIN_AUTH_CODE = "你的H后台授权码"
+H_PROJECT_ID = "项目 ID"
+H_COUNTRY = "国家代码"
 ```
+
+SMSBower 复用标准 Handler 接口，无需额外本地服务：
+
+```python
+SMS_PROVIDER = "smsbower"
+SMSBOWER_API_BASE = "https://smsbower.page/stubs/handler_api.php"
+SMSBOWER_API_KEY = "你的 SMSBower API Key"
+SMSBOWER_SERVICE = "dr"
+SMSBOWER_COUNTRY = "151"
+SMSBOWER_MAX_PRICE = "0.07"
+SMS_MAX_RETRIES = 5
+SMS_CODE_WAIT = 120
+SMS_POLL_INTERVAL = 5
+SMS_REQUEST_TIMEOUT = 20
+```
+
+WebUI 的 `接码平台` 分为 `通用接码 / GrizzlySMS / SMSBower / H 接码 / L 接码`。
+SMSBower 页签可实时查询余额、国家、国家对应的服务以及当前库存价格，选择后保存即热加载生效。
 
 CPA 授权地址来源：
 

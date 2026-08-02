@@ -81,7 +81,9 @@ def resolve_plan_check_route(explicit_proxy: Optional[str] = None) -> dict:
     explicit_proxy 不是 None 时表示 API 调用方明确覆盖配置；空字符串代表直连。
     """
     if explicit_proxy is not None:
-        selected = str(explicit_proxy or "").strip()
+        from config.proxy import normalize_proxy_url
+
+        selected = normalize_proxy_url(explicit_proxy)
         return {
             "proxy": selected,
             "proxy_mode": "request",
@@ -105,6 +107,8 @@ def resolve_plan_check_route(explicit_proxy: Optional[str] = None) -> dict:
         }
 
     selected = str(getattr(proxy_cfg, "PLAN_CHECK_PROXY", "") or "").strip()
+    if selected:
+        selected = proxy_cfg.normalize_proxy_url(selected)
     if not selected:
         selected = str(proxy_cfg.pick_proxy() or "").strip()
     if not selected:

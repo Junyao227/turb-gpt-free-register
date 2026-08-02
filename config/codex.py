@@ -92,16 +92,17 @@ CPA_SAVE_CALLBACK_RECEIPT: bool = True
 # 接码平台（手机短信验证用）
 # SMS_PROVIDER:
 #   "grizzly" = GrizzlySMS，接口说明见 https://api.grizzlysms.com
+#   "smsbower" = SMSBower，复用标准 handler_api.php 文本接口
 #   "l"       = 本地 L 取号服务，接口说明见 L_API.md
 #   "h"       = 本地 H 取号服务，接口说明见 H_API.md
 # ============================================================
 
 SMS_PROVIDER: str = "l"
 
-# 接码 API 基址（GET handler）
+# 标准 GET handler API 基址（grizzly / smsbower 使用）
 SMS_API_BASE: str = "https://api.grizzlysms.com/stubs/handler_api.php"
 
-# 接码 API 密钥（在 GrizzlySMS 后台 → 设置 获取）
+# 标准 Handler API 密钥（GrizzlySMS / SMSBower）
 # 留空时 Codex 授权的手机验证步会失败；如不需要 Codex 自动授权，把 ENABLE_CODEX_AUTO=False。
 SMS_API_KEY: str = env_str("SMS_API_KEY", "")
 
@@ -126,6 +127,21 @@ SMS_POLL_INTERVAL: int = 5
 # 接码平台 HTTP 请求超时（秒）
 SMS_REQUEST_TIMEOUT: int = 30
 
+# Provider-specific Handler settings keep each platform's credentials and choices
+# intact when SMS_PROVIDER is switched in the WebUI. The legacy SMS_* Handler
+# fields remain below as runtime fallbacks for existing installations.
+GRIZZLY_SMS_API_BASE: str = "https://api.grizzlysms.com/stubs/handler_api.php"
+GRIZZLY_SMS_API_KEY: str = env_str("GRIZZLY_SMS_API_KEY", "")
+GRIZZLY_SMS_COUNTRY: str = "187"
+GRIZZLY_SMS_SERVICE: str = "openai"
+GRIZZLY_SMS_MAX_PRICE: str = ""
+
+SMSBOWER_API_BASE: str = "https://smsbower.page/stubs/handler_api.php"
+SMSBOWER_API_KEY: str = env_str("SMSBOWER_API_KEY", "")
+SMSBOWER_COUNTRY: str = "151"
+SMSBOWER_SERVICE: str = "dr"
+SMSBOWER_MAX_PRICE: str = ""
+
 
 # ============================================================
 # H 取号服务（SMS_PROVIDER="h" 时使用）
@@ -145,6 +161,10 @@ H_PHONE_PREFIX: str = ""
 #   "new"      = 每次取新号，调用 /api/admin/h/take-phone
 H_PHONE_ACQUIRE_MODE: str = "reusable"
 
+# H_API.md 的取号参数。
+H_PROJECT_ID: str = ""
+H_COUNTRY: str = ""
+
 
 # ============================================================
 # L 取号服务（SMS_PROVIDER="l" 时使用）
@@ -160,5 +180,52 @@ L_ADMIN_AUTH_CODE: str = env_str("L_ADMIN_AUTH_CODE", "")
 # 留空则直接使用 L 返回的 item.phone。
 L_PHONE_PREFIX: str = ""
 
+# L_API.md 的取号参数。
+L_SERVICE: str = ""
+L_COUNTRY: str = ""
+L_MAX_PRICE: str = ""
+
 # ---- .env overrides for WebUI editable fields ----
-apply_env_overrides(globals(), {'ENABLE_CODEX_AUTO': 'bool', 'CODEX_OAUTH_DRIVER': 'str', 'CODEX_AUTH_URL_SOURCE': 'str', 'CPA_MANAGEMENT_URL': 'str', 'CPA_MANAGEMENT_KEY': 'str', 'CPA_REQUEST_TIMEOUT': 'int', 'CPA_CALLBACK_SUBMIT_RETRIES': 'int', 'CPA_CALLBACK_SUBMIT_RETRY_DELAY': 'int', 'CPA_SAVE_CALLBACK_RECEIPT': 'bool', 'SMS_PROVIDER': 'str', 'SMS_COUNTRY': 'str', 'SMS_SERVICE': 'str', 'SMS_MAX_RETRIES': 'int', 'SMS_CODE_WAIT': 'int', 'SMS_API_KEY': 'str', 'H_API_BASE': 'str', 'H_ADMIN_AUTH_CODE': 'str', 'H_PHONE_PREFIX': 'str', 'H_PHONE_ACQUIRE_MODE': 'str', 'L_API_BASE': 'str', 'L_ADMIN_AUTH_CODE': 'str', 'L_PHONE_PREFIX': 'str'})
+apply_env_overrides(globals(), {
+    'ENABLE_CODEX_AUTO': 'bool',
+    'CODEX_OAUTH_DRIVER': 'str',
+    'CODEX_AUTH_URL_SOURCE': 'str',
+    'CPA_MANAGEMENT_URL': 'str',
+    'CPA_MANAGEMENT_KEY': 'str',
+    'CPA_REQUEST_TIMEOUT': 'int',
+    'CPA_CALLBACK_SUBMIT_RETRIES': 'int',
+    'CPA_CALLBACK_SUBMIT_RETRY_DELAY': 'int',
+    'CPA_SAVE_CALLBACK_RECEIPT': 'bool',
+    'SMS_PROVIDER': 'str',
+    'SMS_API_BASE': 'str',
+    'SMS_API_KEY': 'str',
+    'SMS_COUNTRY': 'str',
+    'SMS_SERVICE': 'str',
+    'SMS_MAX_PRICE': 'str',
+    'SMS_MAX_RETRIES': 'int',
+    'SMS_CODE_WAIT': 'int',
+    'SMS_POLL_INTERVAL': 'int',
+    'SMS_REQUEST_TIMEOUT': 'int',
+    'GRIZZLY_SMS_API_BASE': 'str',
+    'GRIZZLY_SMS_API_KEY': 'str',
+    'GRIZZLY_SMS_COUNTRY': 'str',
+    'GRIZZLY_SMS_SERVICE': 'str',
+    'GRIZZLY_SMS_MAX_PRICE': 'str',
+    'SMSBOWER_API_BASE': 'str',
+    'SMSBOWER_API_KEY': 'str',
+    'SMSBOWER_COUNTRY': 'str',
+    'SMSBOWER_SERVICE': 'str',
+    'SMSBOWER_MAX_PRICE': 'str',
+    'H_API_BASE': 'str',
+    'H_ADMIN_AUTH_CODE': 'str',
+    'H_PHONE_PREFIX': 'str',
+    'H_PHONE_ACQUIRE_MODE': 'str',
+    'H_PROJECT_ID': 'str',
+    'H_COUNTRY': 'str',
+    'L_API_BASE': 'str',
+    'L_ADMIN_AUTH_CODE': 'str',
+    'L_PHONE_PREFIX': 'str',
+    'L_SERVICE': 'str',
+    'L_COUNTRY': 'str',
+    'L_MAX_PRICE': 'str',
+})

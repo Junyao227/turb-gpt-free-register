@@ -426,7 +426,7 @@ EDITABLE_FIELDS = [
     # ---- 代理池 ----
     {
         "key": "PROXY_POOL", "file": "proxy.py", "type": "list_str_multiline", "group": "代理池",
-        "label": "代理池(每行一个)", "help": "每行一个代理 URL，留空行会被忽略；为空则不使用代理",
+        "label": "代理池(每行一个)", "help": "支持 scheme://user:password@host:port、user:password@host:port、host:port:user:password；为空则不使用代理",
     },
     {
         "key": "PLAN_CHECK_PROXY_MODE", "file": "proxy.py", "type": "str", "group": "代理池",
@@ -434,7 +434,7 @@ EDITABLE_FIELDS = [
     },
     {
         "key": "PLAN_CHECK_PROXY", "file": "proxy.py", "type": "str", "group": "代理池",
-        "label": "套餐/Agent专用代理", "help": "用于查套餐和生成 Agent Token；留空时 auto/proxy 从代理池选择。可能包含认证信息，仅保存到 .env",
+        "label": "套餐/Agent专用代理", "help": "支持标准认证 URL 或 host:port:user:password；留空时 auto/proxy 从代理池选择。可能包含认证信息，仅保存到 .env",
         "storage": "env", "secret": True,
     },
     {
@@ -542,15 +542,7 @@ EDITABLE_FIELDS = [
 
     {
         "key": "SMS_PROVIDER", "file": "codex.py", "type": "str", "group": "接码平台",
-        "label": "接码通道", "help": "grizzly / l / h；l 使用 L_API.md，h 使用 H_API.md 定义的本地取号服务",
-    },
-    {
-        "key": "SMS_COUNTRY", "file": "codex.py", "type": "str", "group": "接码平台",
-        "label": "国家代码", "help": "传给接码平台的 country；GrizzlySMS 常用：美国=187；H 通道作为 H_API.md 的 country",
-    },
-    {
-        "key": "SMS_SERVICE", "file": "codex.py", "type": "str", "group": "接码平台",
-        "label": "服务/项目代码", "help": "GrizzlySMS/L 作为 service；H 通道作为 H_API.md 的 projectId",
+        "label": "当前接码通道", "help": "选择注册流程实际使用的接码平台；各平台配置保存在独立页签中",
     },
     {
         "key": "SMS_MAX_RETRIES", "file": "codex.py", "type": "int", "group": "接码平台",
@@ -561,9 +553,54 @@ EDITABLE_FIELDS = [
         "label": "单号等短信(秒)", "help": "单个号等待短信到达的最长秒数，超时则换号",
     },
     {
-        "key": "SMS_API_KEY", "file": "codex.py", "type": "str", "group": "接码平台",
-        "label": "GrizzlySMS API密钥", "help": "GrizzlySMS 平台 API Key，保存在 .env（SMS_API_KEY），不写回 config/*.py",
+        "key": "SMS_POLL_INTERVAL", "file": "codex.py", "type": "int", "group": "接码平台",
+        "label": "轮询间隔(秒)", "help": "查询短信验证码的时间间隔",
+    },
+    {
+        "key": "SMS_REQUEST_TIMEOUT", "file": "codex.py", "type": "int", "group": "接码平台",
+        "label": "请求超时(秒)", "help": "接码平台单次 HTTP 请求超时时间",
+    },
+    {
+        "key": "GRIZZLY_SMS_API_BASE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "GrizzlySMS API 地址", "help": "GrizzlySMS handler_api.php 完整地址",
+    },
+    {
+        "key": "GRIZZLY_SMS_API_KEY", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "GrizzlySMS API Key", "help": "GrizzlySMS 后台提供的 API Key，保存在 .env",
         "storage": "env", "secret": True,
+    },
+    {
+        "key": "GRIZZLY_SMS_COUNTRY", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "GrizzlySMS 国家代码", "help": "传给 GrizzlySMS 的 country，例如美国 187",
+    },
+    {
+        "key": "GRIZZLY_SMS_SERVICE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "GrizzlySMS 服务代码", "help": "传给 GrizzlySMS 的 service",
+    },
+    {
+        "key": "GRIZZLY_SMS_MAX_PRICE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "GrizzlySMS 最高价格", "help": "可选，留空表示不限",
+    },
+    {
+        "key": "SMSBOWER_API_BASE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "SMSBower API 地址", "help": "SMSBower handler_api.php 完整地址",
+    },
+    {
+        "key": "SMSBOWER_API_KEY", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "SMSBower API Key", "help": "这里填写 SMSBower 后台提供的 API Key，保存在 .env",
+        "storage": "env", "secret": True,
+    },
+    {
+        "key": "SMSBOWER_COUNTRY", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "SMSBower 国家", "help": "点击刷新后从 SMSBower 实时查询并选择",
+    },
+    {
+        "key": "SMSBOWER_SERVICE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "SMSBower 服务", "help": "随国家联动刷新；ChatGPT / OpenAI 当前服务代码通常为 dr",
+    },
+    {
+        "key": "SMSBOWER_MAX_PRICE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "SMSBower 最高价格", "help": "按实时价格档位选择或手动填写；留空表示不限",
     },
     {
         "key": "H_API_BASE", "file": "codex.py", "type": "str", "group": "接码平台",
@@ -583,6 +620,14 @@ EDITABLE_FIELDS = [
         "label": "H 取号方式", "help": "reusable=优先复用历史可用号码；new=每次都取一个新号码",
     },
     {
+        "key": "H_PROJECT_ID", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "H 项目 ID", "help": "H_API.md 的 projectId；旧配置留空时兼容 SMS_SERVICE",
+    },
+    {
+        "key": "H_COUNTRY", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "H 国家", "help": "H_API.md 的 country；旧配置留空时兼容 SMS_COUNTRY",
+    },
+    {
         "key": "L_API_BASE", "file": "codex.py", "type": "str", "group": "接码平台",
         "label": "L API 地址", "help": "L 取号服务基础地址，例如 http://localhost:8788",
     },
@@ -594,6 +639,18 @@ EDITABLE_FIELDS = [
     {
         "key": "L_PHONE_PREFIX", "file": "codex.py", "type": "str", "group": "接码平台",
         "label": "L 号码前缀", "help": "L 返回号码不含国家码时填写，例如美国 10 位本地号填 1；留空则不补",
+    },
+    {
+        "key": "L_SERVICE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "L 服务代码", "help": "L_API.md 的 service；旧配置留空时兼容 SMS_SERVICE",
+    },
+    {
+        "key": "L_COUNTRY", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "L 国家", "help": "L_API.md 的 country；旧配置留空时兼容 SMS_COUNTRY",
+    },
+    {
+        "key": "L_MAX_PRICE", "file": "codex.py", "type": "str", "group": "接码平台",
+        "label": "L 最高价格", "help": "可选；旧配置留空时兼容 SMS_MAX_PRICE",
     },
 ]
 

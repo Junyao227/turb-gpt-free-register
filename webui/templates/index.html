@@ -1810,6 +1810,41 @@
       .config-overview-v2-title { font-size: 24px; }
     }
 
+    @media (max-width: 700px) {
+      body { padding-left: 0; padding-top: 64px; }
+      .app-sidebar {
+        right: 0; bottom: auto; width: 100%; height: 64px;
+        flex-direction: row; border-right: none; border-bottom: 1px solid #eef0f4;
+      }
+      .sidebar-brand { width: 48px; height: 64px; padding: 0 10px; border-bottom: none; }
+      .sidebar-brand-title, .sidebar-footer { display: none; }
+      .sidebar-brand-icon { width: 26px; height: 28px; }
+      .sidebar-nav {
+        flex-direction: row; align-items: center; gap: 2px;
+        padding: 7px 8px; overflow-x: auto; overflow-y: hidden;
+      }
+      .app-sidebar .sidebar-nav button,
+      .app-sidebar .sidebar-nav button.sidebar-item {
+        flex: 0 0 auto; width: auto; min-width: 58px; min-height: 48px;
+        padding: 6px 8px; gap: 4px; flex-direction: column; justify-content: center;
+        font-size: 11px; white-space: nowrap;
+      }
+      .sidebar-item-icon { width: 16px; height: 16px; }
+      main { width: calc(100% - 24px); margin: 12px 12px 32px; }
+      .config-nav-v2 { overflow-x: auto; padding: 6px; }
+      .config-nav-v2-title { display: none; }
+      .config-nav-v2-list { flex-direction: row; width: max-content; }
+      .config-nav-v2-item { width: auto; min-height: 38px; padding: 8px 10px; }
+      .config-main-v2, #configSectionsV2 { min-width: 0; max-width: 100%; }
+      .config-section-v2 {
+        min-width: 0; max-width: 100%; padding: 16px;
+        box-sizing: border-box; overflow: hidden;
+      }
+      .config-section-v2-body, .roxy-workspace-box { min-width: 0; max-width: 100%; box-sizing: border-box; }
+      .config-subtabs-v2 { min-width: 0; max-width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+      .config-subtabs-v2 button { flex: 0 0 auto; }
+    }
+
   </style>
 </head>
 <body>
@@ -2267,7 +2302,7 @@
     <div class="outlook-import-head">
       <div class="outlook-import-head-main">
         <h3 id="outlookImportTitle">导入邮箱素材</h3>
-        <p>Outlook：邮箱----密码----clientId----refreshToken；通用 API：邮箱----取码地址（---- 或 ==== 均可）。默认按「已注册成功账号」导入，方便在账号页补跑 Codex。</p>
+        <p>Outlook：邮箱----密码----clientId----refreshToken；通用 API：邮箱----取码地址（---- 或 ==== 均可）。默认导入为可注册的邮箱池素材。</p>
       </div>
       <button type="button" class="outlook-import-close" id="btnCloseOutlookImport" aria-label="关闭">×</button>
     </div>
@@ -2286,8 +2321,8 @@
         <span class="outlook-import-hint">注册来源可在配置里填多个，例如：outlook,generic_api</span>
       </label>
       <label class="outlook-import-check">
-        <input id="importAsRegisteredV2" type="checkbox" checked>
-        <span>导入后默认视为「注册成功账号」（邮箱池标记已用，并出现在账号页，可直接批量补跑 Codex）</span>
+        <input id="importAsRegisteredV2" type="checkbox">
+        <span>这些邮箱已经注册成功（邮箱池将标记已用，并出现在账号页，可直接批量补跑 Codex）</span>
       </label>
       <label class="outlook-import-field">
         <span>邮箱素材</span>
@@ -2601,13 +2636,6 @@ function syncJobsSelectAll(checked) {
 function bindJobsBodyEvents(bodyEl) {
   if (!bodyEl || bodyEl.dataset.bound === '1') return;
   bodyEl.dataset.bound = '1';
-  bodyEl.addEventListener('pointerdown', (e) => {
-    const retryBtn = e.target.closest('[data-retry-job]');
-    if (!retryBtn || retryBtn.disabled || e.button !== 0) return;
-    e.preventDefault();
-    retryBtn.dataset.pointerHandled = '1';
-    retryJob(parseInt(retryBtn.dataset.retryJob, 10), retryBtn);
-  });
   bodyEl.addEventListener('click', (e) => {
     const logBtn = e.target.closest('[data-log-job]');
     if (logBtn) {
@@ -2620,10 +2648,7 @@ function bindJobsBodyEvents(bodyEl) {
     if (otpBtn) { submitManualOtpForJob(otpBtn); return; }
     const retryBtn = e.target.closest('[data-retry-job]');
     if (retryBtn) {
-      if (retryBtn.dataset.pointerHandled === '1') {
-        delete retryBtn.dataset.pointerHandled;
-        return;
-      }
+      if (retryBtn.disabled) return;
       retryJob(parseInt(retryBtn.dataset.retryJob, 10), retryBtn);
       return;
     }
@@ -4532,7 +4557,7 @@ async function doImportOutlook() {
   if (submitBtn) submitBtn.disabled = true;
   try {
     const source = sourceEl ? sourceEl.value : 'outlook';
-    const as_registered = registeredEl ? !!registeredEl.checked : true;
+    const as_registered = registeredEl ? !!registeredEl.checked : false;
     const r = await api('/api/outlook/import', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text, source, as_registered}) });
     const mode = r.as_registered ? '已注册账号' : '邮箱池素材';
     const msg = `按 ${mode} 导入：解析 ${r.parsed} 行，新增 ${r.inserted}，跳过 ${r.skipped}${r.as_registered ? '；可到“账号”页选择后批量补跑 Codex' : ''}`;
@@ -4930,6 +4955,8 @@ async function codexDeleteBulk() {
 let CONFIG_EMAIL_ACTIVE_SECTION_V2 = '通用邮箱 / OTP';
 let CONFIG_SMS_ACTIVE_SECTION_V2 = '通用接码';
 let CONFIG_CODEX_ACTIVE_SECTION_V2 = '基础配置';
+let SMSBOWER_META_LOADING_V2 = false;
+let SMSBOWER_META_LOADED_V2 = false;
 const CONFIG_PENDING_UPDATES = {};
 
 function configGroups() {
@@ -4952,11 +4979,12 @@ function emailConfigSectionForKey(key) {
 }
 
 function smsConfigSectionForKey(key) {
-  if (['SMS_PROVIDER','SMS_COUNTRY','SMS_SERVICE','SMS_MAX_RETRIES','SMS_CODE_WAIT'].includes(key)) {
-    return ['通用接码', '接码通道选择、国家/服务代码、等待和重试参数；H 通道可复用 SMS_SERVICE/SMS_COUNTRY 作为 projectId/country'];
+  if (['SMS_PROVIDER','SMS_MAX_RETRIES','SMS_CODE_WAIT','SMS_POLL_INTERVAL','SMS_REQUEST_TIMEOUT'].includes(key)) {
+    return ['通用接码', '选择当前通道，并配置各平台共用的等待、轮询和重试参数'];
   }
-  if (key === 'SMS_API_KEY') return ['GrizzlySMS', 'GrizzlySMS 平台 API Key 配置'];
-  if (key.startsWith('H_')) return ['H 接码', 'H_API.md 本地 H 取号服务配置；项目ID/国家留空时复用通用字段'];
+  if (key.startsWith('GRIZZLY_SMS_')) return ['GrizzlySMS', 'GrizzlySMS 独立地址、密钥、国家、服务与价格配置'];
+  if (key.startsWith('SMSBOWER_')) return ['SMSBower', 'SMSBower 独立配置；国家、服务和价格由平台实时查询'];
+  if (key.startsWith('H_')) return ['H 接码', 'H_API.md 本地 H 取号服务配置'];
   if (key.startsWith('L_')) return ['L 接码', 'L_API.md 本地 L 取号服务配置'];
   return ['其他接码配置', ''];
 }
@@ -5203,7 +5231,21 @@ function renderFeatureSwitchField(f, opts = {}) {
 function renderConfigPlainFieldV2(f) {
   const fv = Object.prototype.hasOwnProperty.call(CONFIG_PENDING_UPDATES, f.key) ? CONFIG_PENDING_UPDATES[f.key] : f.value;
   let control = '';
-  if (f.type === 'int') {
+  if (f.key === 'SMS_PROVIDER') {
+    const providers = [
+      ['smsbower', 'SMSBower'], ['grizzly', 'GrizzlySMS'], ['h', 'H 接码'], ['l', 'L 接码'],
+    ];
+    control = `<select data-key="${attrEsc(f.key)}">${providers.map(([value, label]) => `<option value="${value}"${String(fv) === value ? ' selected' : ''}>${label}</option>`).join('')}</select>`;
+  } else if (f.key === 'SMSBOWER_COUNTRY') {
+    const current = String(fv == null ? '' : fv);
+    control = `<select id="smsBowerCountryV2" data-key="${attrEsc(f.key)}"><option value="${attrEsc(current)}">${current ? `当前：${esc(current)}` : '点击刷新获取国家'}</option></select>`;
+  } else if (f.key === 'SMSBOWER_SERVICE') {
+    const current = String(fv == null ? '' : fv);
+    control = `<select id="smsBowerServiceV2" data-key="${attrEsc(f.key)}"><option value="${attrEsc(current)}">${current ? `当前：${esc(current)}` : '请先选择国家'}</option></select>`;
+  } else if (f.key === 'SMSBOWER_MAX_PRICE') {
+    const shown = isPlaceholderEmpty(fv) ? '' : fv;
+    control = `<input id="smsBowerMaxPriceV2" type="text" inputmode="decimal" list="smsBowerPricesV2" data-key="${attrEsc(f.key)}" value="${attrEsc(shown)}" placeholder="留空表示不限" autocomplete="off"><datalist id="smsBowerPricesV2"></datalist>`;
+  } else if (f.type === 'int') {
     control = `<input type="number" data-key="${attrEsc(f.key)}" value="${attrEsc(fv == null ? '' : fv)}">`;
   } else if (f.type === 'float') {
     control = `<input type="number" step="0.1" data-key="${attrEsc(f.key)}" value="${attrEsc(fv == null ? '' : fv)}">`;
@@ -5314,6 +5356,9 @@ function renderSectionedConfigSectionV2(name, fields, sectionForKey, preferred, 
   if (name === '邮箱 / OTP' && active === 'CloudMail') {
     extra = renderCloudMailTokenToolsV2();
   }
+  if (name === '接码平台' && active === 'SMSBower') {
+    extra = renderSmsBowerToolsV2();
+  }
   return `
     <section class="config-section-v2" id="${esc(slug)}" data-config-section="${esc(name)}">
       ${renderConfigSectionHead(name, '')}
@@ -5333,6 +5378,126 @@ function renderSectionedConfigSectionV2(name, fields, sectionForKey, preferred, 
       </div>
     </section>
   `;
+}
+function renderSmsBowerToolsV2() {
+  return `
+    <div class="roxy-workspace-box" style="margin-top:18px;">
+      <div class="row">
+        <div><b>SMSBower 实时状态</b></div>
+        <div class="action-cell"><button class="btn" type="button" id="btnRefreshSmsBowerV2">刷新</button></div>
+      </div>
+      <div id="smsBowerBalanceV2" class="muted" style="font-size:12px;">余额：待查询</div>
+      <div id="smsBowerPriceStatusV2" class="muted" style="font-size:12px;">库存与价格：待查询</div>
+    </div>
+  `;
+}
+function _smsBowerConfigValueV2(key) {
+  const el = document.querySelector(`#configSectionsV2 [data-key="${CSS.escape(key)}"]`);
+  if (el) return String(el.value || '').trim();
+  const field = CONFIG.find(x => x.key === key);
+  return String(field ? field.value || '' : '').trim();
+}
+async function _smsBowerApiV2(path, extra = {}) {
+  return api(path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      api_key: _smsBowerConfigValueV2('SMSBOWER_API_KEY'),
+      base_url: _smsBowerConfigValueV2('SMSBOWER_API_BASE'),
+      timeout: parseInt(_smsBowerConfigValueV2('SMS_REQUEST_TIMEOUT') || '20', 10),
+      ...extra,
+    }),
+  });
+}
+function _fillSmsBowerSelectV2(select, items, current, valueKey, nameKey, emptyLabel) {
+  if (!select) return;
+  const seen = new Set(items.map(item => String(item[valueKey] || '')));
+  const options = [];
+  if (current && !seen.has(current)) options.push(`<option value="${attrEsc(current)}" selected>当前：${esc(current)}</option>`);
+  options.push(...items.map(item => {
+    const value = String(item[valueKey] || '');
+    const label = String(item[nameKey] || value);
+    return `<option value="${attrEsc(value)}"${value === current ? ' selected' : ''}>${esc(label)} (${esc(value)})</option>`;
+  }));
+  select.innerHTML = options.length ? options.join('') : `<option value="${attrEsc(current)}">${esc(emptyLabel)}</option>`;
+}
+async function loadSmsBowerPricesV2() {
+  const country = _smsBowerConfigValueV2('SMSBOWER_COUNTRY');
+  const service = _smsBowerConfigValueV2('SMSBOWER_SERVICE');
+  const status = $('#smsBowerPriceStatusV2');
+  if (!country || !service || !status) return;
+  status.textContent = '库存与价格：查询中...';
+  try {
+    const result = await _smsBowerApiV2('/api/smsbower/prices', {country, service});
+    const list = $('#smsBowerPricesV2');
+    if (list) list.innerHTML = (result.prices || []).map(price => `<option value="${attrEsc(price)}"></option>`).join('');
+    status.textContent = result.count
+      ? `库存：${result.count}；供应商：${result.provider_count}；价格：${result.min_price} - ${result.max_price}`
+      : '库存与价格：当前组合暂无可用号码';
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red);">价格查询失败：${esc(e.message)}</span>`;
+  }
+}
+async function loadSmsBowerServicesV2() {
+  const country = _smsBowerConfigValueV2('SMSBOWER_COUNTRY');
+  const select = $('#smsBowerServiceV2');
+  if (!country || !select) return;
+  const current = _smsBowerConfigValueV2('SMSBOWER_SERVICE');
+  select.disabled = true;
+  try {
+    const result = await _smsBowerApiV2('/api/smsbower/services', {country});
+    _fillSmsBowerSelectV2(select, result.services || [], current, 'code', 'name', '未返回服务');
+    select.disabled = false;
+    await loadSmsBowerPricesV2();
+  } catch (e) {
+    select.disabled = false;
+    const status = $('#smsBowerPriceStatusV2');
+    if (status) status.innerHTML = `<span style="color:var(--red);">服务查询失败：${esc(e.message)}</span>`;
+  }
+}
+async function loadSmsBowerMetadataV2(force = false) {
+  if (SMSBOWER_META_LOADING_V2 || (SMSBOWER_META_LOADED_V2 && !force)) return;
+  const countrySelect = $('#smsBowerCountryV2');
+  const status = $('#smsBowerBalanceV2');
+  const button = $('#btnRefreshSmsBowerV2');
+  if (!countrySelect || !status) return;
+  if (!_smsBowerConfigValueV2('SMSBOWER_API_KEY')) {
+    status.textContent = '余额：请先填写上方 SMSBower API Key';
+    return;
+  }
+  SMSBOWER_META_LOADING_V2 = true;
+  if (button) button.disabled = true;
+  countrySelect.disabled = true;
+  status.textContent = '余额：查询中...';
+  try {
+    const [balance, countries] = await Promise.all([
+      _smsBowerApiV2('/api/smsbower/balance'),
+      _smsBowerApiV2('/api/smsbower/countries'),
+    ]);
+    status.textContent = `余额：${balance.balance}`;
+    const current = _smsBowerConfigValueV2('SMSBOWER_COUNTRY');
+    _fillSmsBowerSelectV2(countrySelect, countries.countries || [], current, 'id', 'name', '未返回国家');
+    countrySelect.disabled = false;
+    SMSBOWER_META_LOADED_V2 = true;
+    await loadSmsBowerServicesV2();
+  } catch (e) {
+    countrySelect.disabled = false;
+    status.innerHTML = `<span style="color:var(--red);">查询失败：${esc(e.message)}</span>`;
+  } finally {
+    SMSBOWER_META_LOADING_V2 = false;
+    if (button) button.disabled = false;
+  }
+}
+function bindSmsBowerToolsV2() {
+  const button = $('#btnRefreshSmsBowerV2');
+  const country = $('#smsBowerCountryV2');
+  const service = $('#smsBowerServiceV2');
+  if (!button || !country || !service) return;
+  button.addEventListener('click', () => loadSmsBowerMetadataV2(true));
+  country.addEventListener('change', () => loadSmsBowerServicesV2());
+  service.addEventListener('change', () => loadSmsBowerPricesV2());
+  SMSBOWER_META_LOADED_V2 = false;
+  setTimeout(() => loadSmsBowerMetadataV2(false), 0);
 }
 function renderCloudMailTokenToolsV2() {
   const hasCloudMail = CONFIG.some(f => String(f.key || '').startsWith('CLOUDMAIL_'));
@@ -5534,7 +5699,7 @@ function renderConfigSectionV2(name, fields) {
       name,
       fields,
       smsConfigSectionForKey,
-      ['通用接码', 'GrizzlySMS', 'H 接码', 'L 接码', '其他接码配置'],
+      ['通用接码', 'GrizzlySMS', 'SMSBower', 'H 接码', 'L 接码', '其他接码配置'],
       { get: () => CONFIG_SMS_ACTIVE_SECTION_V2, set: v => { CONFIG_SMS_ACTIVE_SECTION_V2 = v; } },
       'sms-section-v2'
     );
@@ -5564,6 +5729,7 @@ function renderConfigLayoutV2() {
   if (sectionMount) renderRegistrationEpSelect(sectionMount, 'configRegistrationSelectV2');
   bindRoxyWorkspaceToolsV2();
   bindCloudMailToolsV2();
+  bindSmsBowerToolsV2();
 }
 function scrollToConfigSection(slug) {
   const el = document.getElementById(slug);

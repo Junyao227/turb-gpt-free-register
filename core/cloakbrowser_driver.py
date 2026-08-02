@@ -317,10 +317,12 @@ class CloakSeleniumDriver:
 
 
 def _normalize_proxy(proxy: str | None) -> str | None:
-    proxy = str(proxy or "").strip()
-    if not proxy:
+    from config.proxy import normalize_proxy_url
+
+    normalized = normalize_proxy_url(proxy or "")
+    if not normalized:
         return None
-    return proxy.replace("socks5h://", "socks5://")
+    return normalized.replace("socks5h://", "socks5://")
 
 
 def _detect_cloak_exit_geo(proxy_url: str | None = None) -> dict:
