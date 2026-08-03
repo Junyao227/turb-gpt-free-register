@@ -94,6 +94,7 @@ def _compact_account_for_list(row: dict) -> dict:
         "user_name", "email_source", "note", "archived", "created_at",
         "plan_type", "current_plan_type", "plus_trial_eligible",
         "plan_check_status", "codex_status", "codex_agent_status",
+        "reauth_status", "reauth_job_id", "reauth_completed_at",
     ):
         if key in row:
             out[key] = row.get(key)
@@ -114,6 +115,7 @@ def _compact_account_for_list(row: dict) -> dict:
         # Codex / Agent 状态提示。
         "codex_error", "codex_agent_message", "codex_agent_runtime_id",
         "codex_agent_sub2api_url", "codex_agent_sub2api_mode", "codex_agent_sub2api_total",
+        "reauth_error",
     )
     for key in optional_keys:
         value = row.get(key)
@@ -145,7 +147,8 @@ def _compact_job_for_list(row: dict) -> dict:
         "status": row.get("status"),
     }
     for key in (
-        "parent_job_id", "retry_attempt", "email", "started_at", "completed_at",
+        "job_type", "parent_job_id", "retry_attempt", "account_id", "email", "email_source",
+        "started_at", "completed_at",
         "display_status", "retryable", "retry_action", "retry_label",
         "manual_otp_required",
     ):
@@ -218,6 +221,9 @@ def create_app(auth_code: str | None = None) -> Flask:
     recovered_codex_agents = db.recover_interrupted_codex_agents()
     if recovered_codex_agents:
         logger.warning("已恢复 %s 个因 WebUI 重启中断的 Codex Agent Token 状态", recovered_codex_agents)
+    recovered_reauth = db.recover_interrupted_account_reauth()
+    if recovered_reauth:
+        logger.warning("已恢复 %s 个因 WebUI 重启中断的重新登录任务", recovered_reauth)
 
     # ----------------------------------------------------------
     # 页面
@@ -326,6 +332,42 @@ def create_app(auth_code: str | None = None) -> Flask:
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify({"ok": True, "id": acc_id, "field": field, "value": value})
+
+    @app.get("/api/accounts/<int:acc_id>/reauth")
+    def api_account_reauth_status(acc_id: int):
+        """Return re-login state and a safe task summary; never return credentials."""
+        account = db.get_account(acc_id)
+        if not account:
+            return jsonify({"ok": False, "error": "账号不存在"}), 404
+        job_id = account.get("reauth_job_id")
+        job = db.get_job(int(job_id)) if job_id is not None else None
+        return jsonify({
+            "ok": True,
+            "account_id": acc_id,
+            "email": account.get("email"),
+            "status": account.get("reauth_status"),
+            "error": account.get("reauth_error"),
+            "completed_at": account.get("reauth_completed_at"),
+            "job": _compact_job_for_list(job) if job else None,
+        })
+
+    @app.post("/api/accounts/<int:acc_id>/reauth")
+    def api_account_reauth(acc_id: int):
+        """Queue existing-account ChatGPT OTP login without exposing the new token."""
+        data = request.get_json(silent=True) or {}
+        try:
+            workers = max(1, min(16, int(data.get("workers", svc.get_executor_workers()))))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "workers 非法"}), 400
+        result = svc.submit_account_reauth(acc_id, workers=workers)
+        if isinstance(result.get("job"), dict):
+            result["job"] = _compact_job_for_list(result["job"])
+        if not result.get("ok"):
+            status = int(result.get("status") or 400)
+            result.pop("status", None)
+            return jsonify(result), status
+        result.pop("status", None)
+        return jsonify(result), 202
 
     @app.post("/api/accounts/secret-bulk")
     def api_accounts_secret_bulk():

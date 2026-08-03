@@ -207,8 +207,8 @@ def _fetch_yangyang_otp(
         code = _extract_code(text)
         if code:
             logger.info(
-                f"[GenericAPI] yangyang 页面提取到 OTP={code}, "
-                f"mail_id={msg_id}, subject={subject[:80]!r}"
+                "[GenericAPI] yangyang 页面提取到 OTP, "
+                f"mail_id={msg_id}"
             )
             return code
     return None
@@ -319,19 +319,18 @@ def fetch_latest_otp(
                     best_seen_at = now_seen
                     settle_until = now_seen + settle
                     logger.info(
-                        f"[GenericAPI] 首次锁定 OTP={code}, "
+                        "[GenericAPI] 首次锁定 OTP, "
                         f"等 {settle}s 看取码接口是否出现更新验证码..."
                     )
                 elif code != best_otp:
                     logger.info(
-                        f"[GenericAPI] 发现更新 OTP={code}，"
-                        f"替换之前的 {best_otp}, 重置 settle 计时"
+                        "[GenericAPI] 发现更新 OTP，重置 settle 计时"
                     )
                     best_otp = code
                     best_seen_at = now_seen
                     settle_until = now_seen + settle
                 else:
-                    logger.debug(f"[GenericAPI] 取码接口仍返回候选 OTP={best_otp}")
+                    logger.debug("[GenericAPI] 取码接口仍返回候选 OTP")
                 resp = None
                 text = ""
             else:
@@ -348,19 +347,18 @@ def fetch_latest_otp(
                         best_seen_at = now_seen
                         settle_until = now_seen + settle
                         logger.info(
-                            f"[GenericAPI] 首次锁定 OTP={code}, "
+                            "[GenericAPI] 首次锁定 OTP, "
                             f"等 {settle}s 看取码接口是否出现更新验证码..."
                         )
                     elif code != best_otp:
                         logger.info(
-                            f"[GenericAPI] 发现更新 OTP={code}，"
-                            f"替换之前的 {best_otp}, 重置 settle 计时"
+                            "[GenericAPI] 发现更新 OTP，重置 settle 计时"
                         )
                         best_otp = code
                         best_seen_at = now_seen
                         settle_until = now_seen + settle
                     else:
-                        logger.debug(f"[GenericAPI] 取码接口仍返回候选 OTP={best_otp}")
+                        logger.debug("[GenericAPI] 取码接口仍返回候选 OTP")
                 else:
                     last_error = f"HTTP 200 但未提取到 6 位验证码，响应预览: {text[:160]}"
             else:
@@ -371,7 +369,7 @@ def fetch_latest_otp(
         now = time.time()
         if best_otp and settle_until is not None and now >= settle_until:
             logger.info(
-                f"[GenericAPI] settle 完成，返回 OTP={best_otp}, "
+                "[GenericAPI] settle 完成，返回 OTP, "
                 f"候选锁定时间={time.strftime('%H:%M:%S', time.localtime(best_seen_at))}"
             )
             return best_otp
@@ -379,7 +377,7 @@ def fetch_latest_otp(
         remaining = int(deadline - now)
         if best_otp and settle_until is not None:
             logger.info(
-                f"[GenericAPI] 已锁定候选 OTP={best_otp}，等 settle 中"
+                "[GenericAPI] 已锁定候选 OTP，等 settle 中"
                 f"（剩余 settle ~{max(0, int(settle_until - now))}s, 总剩余 {remaining}s）..."
             )
         else:
@@ -390,7 +388,7 @@ def fetch_latest_otp(
         time.sleep(interval)
 
     if best_otp:
-        logger.warning(f"[GenericAPI] 总超时但已有候选，返回 OTP={best_otp}")
+        logger.warning("[GenericAPI] 总超时但已有候选，返回 OTP")
         return best_otp
 
     raise GenericApiMailError(f"等待通用 API 验证码超时: {email}; {last_error}")

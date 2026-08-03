@@ -972,7 +972,6 @@ def fetch_latest_otp(
     # settle 状态机
     best_otp: str | None = None       # 当前看到的最新 OTP
     best_ts: float = 0.0              # 它的邮件时间戳
-    best_subject: str = ""
     best_protocol: str = ""
     best_source: str = ""
     settle_until: float | None = None # 抓到第一封后，等到这个时刻才返回
@@ -1032,17 +1031,16 @@ def fetch_latest_otp(
             if ts > best_ts:
                 if best_otp:
                     logger.info(
-                        f"[Outlook] 发现更晚的 OTP={otp} (ts={item.get('date') or item.get('receivedDateTime')}, source={source}), "
-                        f"替换之前的 {best_otp}, 重置 settle 计时"
+                        f"[Outlook] 发现更晚的 OTP (ts={item.get('date') or item.get('receivedDateTime')}, source={source}), "
+                        "重置 settle 计时"
                     )
                 else:
                     logger.info(
-                        f"[Outlook] 首次锁定 OTP={otp}, source={source}, ts={item.get('date') or item.get('receivedDateTime')}, "
-                        f"subject={subject!r}, 等 {settle}s 看是否有更晚邮件..."
+                        f"[Outlook] 首次锁定 OTP, source={source}, ts={item.get('date') or item.get('receivedDateTime')}, "
+                        f"等 {settle}s 看是否有更晚邮件..."
                     )
                 best_otp = otp
                 best_ts = ts
-                best_subject = subject
                 best_protocol = protocol
                 best_source = source
                 settle_until = time.time() + settle
@@ -1052,15 +1050,14 @@ def fetch_latest_otp(
         now = time.time()
         if best_otp and settle_until is not None and now >= settle_until:
             logger.info(
-                f"[Outlook] settle 完成，返回 OTP={best_otp}, source={best_source or best_protocol}, protocol={best_protocol}, "
-                f"subject={best_subject!r}"
+                f"[Outlook] settle 完成，返回 OTP, source={best_source or best_protocol}, protocol={best_protocol}"
             )
             return best_otp
 
         remaining = int(deadline - now)
         if best_otp:
             logger.info(
-                f"[Outlook] 已锁定候选 OTP={best_otp}，等 settle 中"
+                "[Outlook] 已锁定候选 OTP，等 settle 中"
                 f"（剩余 settle ~{int(settle_until - now)}s, 总剩余 {remaining}s）..."
             )
         else:
@@ -1072,7 +1069,7 @@ def fetch_latest_otp(
     # 超时但已经锁定过候选（settle 没等到结束就到 deadline 了）
     if best_otp:
         logger.warning(
-            f"[Outlook] 总超时但已有候选，返回 OTP={best_otp}, source={best_source or best_protocol} (subject={best_subject!r})"
+            f"[Outlook] 总超时但已有候选，返回 OTP, source={best_source or best_protocol}"
         )
         return best_otp
 

@@ -257,9 +257,12 @@ def shutdown_executor(wait: bool = True) -> None:
 class _JobLogContext:
     """让本线程的根 logger 多一个 FileHandler，结束后移除。"""
 
-    def __init__(self, log_path: str):
+    def __init__(self, log_path: str, *, redact_sensitive: bool = False):
         self.log_path = log_path
+        self.redact_sensitive = redact_sensitive
         self.handler: logging.FileHandler | None = None
+        self.redaction_filter: logging.Filter | None = None
+        self.external_redaction_filters: list[tuple[logging.Handler, logging.Filter]] = []
 
     def __enter__(self):
         Path(self.log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -272,13 +275,26 @@ class _JobLogContext:
         # 仅给本线程过滤 —— 用 thread name 做区分，避免污染其他任务的日志
         thread_name = threading.current_thread().name
         self.handler.addFilter(lambda r: r.threadName == thread_name)
+        if self.redact_sensitive:
+            self.redaction_filter = _ReauthLogRedactionFilter(thread_name)
+            self.handler.addFilter(self.redaction_filter)
+            root_logger = logging.getLogger()
+            for handler in list(root_logger.handlers):
+                redaction_filter = _ReauthLogRedactionFilter(thread_name)
+                handler.addFilter(redaction_filter)
+                self.external_redaction_filters.append((handler, redaction_filter))
         logging.getLogger().addHandler(self.handler)
         return self
 
     def __exit__(self, exc_type, exc, tb):
         if self.handler is not None:
+            if self.redaction_filter is not None:
+                self.handler.removeFilter(self.redaction_filter)
             self.handler.close()
             logging.getLogger().removeHandler(self.handler)
+        for handler, redaction_filter in self.external_redaction_filters:
+            handler.removeFilter(redaction_filter)
+        self.external_redaction_filters.clear()
 
 
 def _run_one_job(job_id: int, log_file: str) -> None:
@@ -430,6 +446,147 @@ def _run_codex_retry_job(job_id: int, log_file: str, email: str, account_id: int
         _deactivate_job(job_id)
 
 
+def _redact_reauth_error(error: object) -> str:
+    """Keep task errors useful while removing OTP-like values from logs/API."""
+    import re
+
+    text = str(error or "重新登录失败")
+    text = re.sub(r"\b\d{6}\b", "[已隐藏验证码]", text)
+    text = re.sub(
+        r"(?i)(access[_ -]?token|accesstoken|refresh[_ -]?token|refreshtoken|password|secret|csrf[_ -]?token|csrftoken)\s*[:=]\s*[^,;\s]+",
+        r"\1=[已隐藏]",
+        text,
+    )
+    text = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~-]+", "Bearer [已隐藏]", text)
+    text = re.sub(r"(?i)(https?://[^\s\"'<>]+)\?[^\s\"'<>]+", r"\1?[已隐藏参数]", text)
+    text = re.sub(
+        r"(?i)([\"']?(?:access[_ -]?token|accesstoken|refresh[_ -]?token|refreshtoken|password|secret|csrf[_ -]?token|csrftoken|otp|verification[_ -]?code|code)[\"']?\s*[:=]\s*[\"']?)[^,;\s\"'}]+",
+        r"\1[已隐藏]",
+        text,
+    )
+    return text[:500]
+
+
+class _ReauthLogRedactionFilter(logging.Filter):
+    """Redact credentials from the persisted log record before it is written."""
+
+    def __init__(self, thread_name: str | None = None):
+        super().__init__()
+        self.thread_name = thread_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self.thread_name and record.threadName != self.thread_name:
+            return True
+        try:
+            record.msg = _redact_reauth_error(record.getMessage())
+            record.args = ()
+        except Exception:
+            pass
+        return True
+
+
+def _run_account_reauth_job(job_id: int, log_file: str, email: str, account_id: int) -> None:
+    """Run existing-account OTP login and commit only its final session."""
+    _activate_job(job_id)
+    current = db.get_job(job_id)
+    if not current or current.get("status") == "cancelled":
+        _deactivate_job(job_id)
+        return
+
+    now = datetime.now().isoformat(timespec="seconds")
+    if not db.mark_account_reauth_running(account_id, job_id):
+        db.update_job(job_id, status="failed", error="账号重新登录任务状态无效", completed_at=now)
+        _deactivate_job(job_id)
+        return
+    db.update_job(job_id, status="running", started_at=now)
+    try:
+        with _JobLogContext(log_file, redact_sensitive=True):
+            from core.account_reauth import run_account_reauth
+
+            logger.info("[Job %s] 开始已有账号重新登录：%s", job_id, email)
+            result = run_account_reauth(email, account_id=account_id)
+            if is_stop_requested(job_id):
+                error = "用户手动停止，旧 Token 保持不变"
+                db.update_account_reauth_failure(account_id, job_id, error)
+                db.update_job(
+                    job_id,
+                    status="stopped",
+                    email=email,
+                    account_id=account_id,
+                    error=error,
+                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                )
+                return
+
+            new_token = str(result.get("access_token") or "").strip()
+            if not new_token:
+                raise RuntimeError("登录流程未返回新的 access_token")
+            committed = db.update_account_after_reauth(
+                account_id,
+                job_id,
+                access_token=new_token,
+                session_info=result.get("session_info"),
+                proxy_used=result.get("proxy_used"),
+                device_id=result.get("device_id"),
+            )
+            if not committed:
+                raise RuntimeError("账号已被删除或重新登录任务已失效，未更新 Token")
+
+            plan_result = None
+            try:
+                from core.plan_check_service import enqueue_account_plan_check
+
+                plan_result = enqueue_account_plan_check(
+                    account_id=account_id,
+                    email=email,
+                    access_token=new_token,
+                    trigger="reauth_auto",
+                )
+                if not plan_result.get("accepted") and not plan_result.get("busy"):
+                    logger.warning("[重新登录] 套餐查询自动入队失败：%s", plan_result.get("error") or "未知错误")
+            except Exception as exc:
+                logger.warning("[重新登录] 套餐查询自动入队异常：%s", _redact_reauth_error(exc))
+
+            db.update_job(
+                job_id,
+                status="success",
+                email=email,
+                account_id=account_id,
+                error="",
+                completed_at=datetime.now().isoformat(timespec="seconds"),
+            )
+            logger.info(
+                "[Job %s] 重新登录成功，账号记录已更新；套餐查询=%s",
+                job_id,
+                (plan_result or {}).get("status") if isinstance(plan_result, dict) else "未提交",
+            )
+    except StopRequested:
+        error = "用户手动停止，旧 Token 保持不变"
+        db.update_account_reauth_failure(account_id, job_id, error)
+        db.update_job(
+            job_id,
+            status="stopped",
+            email=email,
+            account_id=account_id,
+            error=error,
+            completed_at=datetime.now().isoformat(timespec="seconds"),
+        )
+    except Exception as exc:
+        error = _redact_reauth_error(exc)
+        db.update_account_reauth_failure(account_id, job_id, error)
+        db.update_job(
+            job_id,
+            status="failed",
+            email=email,
+            account_id=account_id,
+            error=error,
+            completed_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        logger.error("[Job %s] 已有账号重新登录失败：%s", job_id, error)
+    finally:
+        _deactivate_job(job_id)
+
+
 # ============================================================
 # 公共接口
 # ============================================================
@@ -467,6 +624,71 @@ def submit_registration(count: int = 1, email_source: str | None = None, workers
             jobs.append(db.get_job(int(job["id"])) or job)
     logger.info(f"[Service] 已提交 {count} 个注册任务，源={email_source}，workers={effective_workers}")
     return jobs
+
+
+def submit_account_reauth(account_id: int, workers: int | None = None) -> dict:
+    """Queue a fresh ChatGPT login for one existing account."""
+    account = db.get_account(int(account_id))
+    if account is None:
+        return {"ok": False, "error": "账号不存在", "status": 404}
+    email = str(account.get("email") or "").strip()
+    if not email:
+        return {"ok": False, "error": "账号缺少邮箱，无法重新登录", "status": 409}
+
+    try:
+        from core.account_reauth import _original_email_source
+
+        email_source = _original_email_source(account, email)
+    except Exception as exc:
+        return {"ok": False, "error": _redact_reauth_error(exc), "status": 400}
+
+    with _executor_lock:
+        executor = get_executor(max_workers=workers)
+        try:
+            job, created = db.create_account_reauth_job(
+                int(account_id),
+                email=email,
+                email_source=email_source,
+            )
+        except LookupError as exc:
+            return {"ok": False, "error": str(exc), "status": 404}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc), "status": 409}
+
+        if not created:
+            return {
+                "ok": False,
+                "error": f"该账号已有重新登录任务 #{job.get('id')} 在队列或运行中",
+                "status": 409,
+                "job": dict(job),
+            }
+        try:
+            executor.submit(
+                _run_account_reauth_job,
+                int(job["id"]),
+                job["log_file"],
+                email,
+                int(account_id),
+            )
+        except Exception as exc:
+            error = f"队列提交失败：{_redact_reauth_error(exc)}"
+            db.update_account_reauth_failure(int(account_id), int(job["id"]), error)
+            db.update_job(
+                int(job["id"]),
+                status="failed",
+                email=email,
+                account_id=int(account_id),
+                error=error,
+                completed_at=datetime.now().isoformat(timespec="seconds"),
+            )
+            return {"ok": False, "error": error, "status": 503, "job": db.get_job(int(job["id"])) or job}
+
+    return {
+        "ok": True,
+        "created": True,
+        "job": db.get_job(int(job["id"])) or job,
+        "message": f"已创建重新登录任务 #{job['id']}，将在后台获取新的 Token",
+    }
 
 
 def _account_for_job(job: dict) -> dict | None:

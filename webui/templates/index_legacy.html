@@ -1364,6 +1364,16 @@ function _codexAction(r) {
   const label = s === 'success' ? '重新补跑 Codex' : '补跑 Codex';
   return `<button data-codex-retry="${esc(r.email)}" title="重新跑一次 Codex 授权（会消耗 1 封邮箱 OTP + 1 个接码短信）">${label}</button>`;
 }
+function _reauthAction(r) {
+  const s = r.reauth_status || '';
+  const job = r.reauth_job_id ? `<button data-reauth-log="${esc(r.reauth_job_id)}" title="查看重新登录任务日志">重新登录日志</button>` : '';
+  if (s === 'queued' || s === 'running') {
+    return `<button disabled title="该账号正在后台重新登录">重新登录中</button>${job}`;
+  }
+  const label = s === 'failed' ? '再次重新登录' : '重新登录获取 Token';
+  const title = r.reauth_error ? `上次重新登录失败：${r.reauth_error}` : '重新走 ChatGPT 邮箱 OTP 登录，不会新建账号或补跑 Codex';
+  return `<button data-account-reauth="${esc(r.id)}" title="${esc(title)}">${label}</button>${job}`;
+}
 function renderAccounts() {
   const p = PAGERS.accounts;
   const total = ACCOUNTS_TOTAL;
@@ -1385,7 +1395,7 @@ function renderAccounts() {
         <div class="account-row-actions">
           <div class="account-action-group"><button class="primary" data-account-copy-secret="access_token" data-account-id="${esc(r.id)}" ${r.has_access_token ? '' : 'disabled'}>复制Token</button> <button class="good" data-account-copy-secret="copy_line" data-account-id="${esc(r.id)}">复制整行</button></div>
           <div class="account-action-group"><button data-account-note="${esc(r.id)}" title="设置/清空该账号备注">备注</button> ${_planAction(r)} ${_extractLinkAction(r)}</div>
-          <div class="account-action-group">${_codexAction(r)} <button data-codex-log="${esc(r.email)}" title="查看该账号最近一次 Codex 补跑日志">补跑日志</button></div>
+          <div class="account-action-group">${_codexAction(r)} ${_reauthAction(r)} <button data-codex-log="${esc(r.email)}" title="查看该账号最近一次 Codex 补跑日志">补跑日志</button></div>
           <div class="account-action-group danger-zone"><button data-account-archive="${esc(r.id)}" data-archived="${r.archived ? '0' : '1'}" title="${r.archived ? '恢复到默认账号列表' : '归档后默认账号列表不再显示'}">${r.archived ? '恢复' : '归档'}</button> <button class="danger" data-account-delete="${esc(r.id)}" data-email="${esc(r.email)}">删除</button></div>
         </div>
       </td>
@@ -1470,6 +1480,21 @@ async function pollRetryLog() {
 $('#btnCloseRetryLog').addEventListener('click', closeRetryLogModal);
 
 // 账号操作按钮（事件委托）
+async function reauthAccount(accountId, btn) {
+  if (!confirm('确定为该已有账号重新登录并获取新的 ChatGPT access_token 吗？\n\n不会新建账号，也不会补跑 Codex。')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api(`/api/accounts/${encodeURIComponent(accountId)}/reauth`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    showToast(r.message || '已创建重新登录任务');
+    loadAccounts();
+    if (r.job?.id) openLog(Number(r.job.id));
+  } catch (err) {
+    showToast('重新登录提交失败: ' + err.message);
+    if (btn) btn.disabled = false;
+  }
+}
 $('#accountsBody').addEventListener('click', async (e) => {
   const copySecretBtn = e.target.closest('[data-account-copy-secret]');
   if (copySecretBtn) {
@@ -1548,6 +1573,18 @@ $('#accountsBody').addEventListener('click', async (e) => {
   const logBtn = e.target.closest('[data-codex-log]');
   if (logBtn) {
     openRetryLog(logBtn.dataset.codexLog);
+    return;
+  }
+
+  const reauthLogBtn = e.target.closest('[data-reauth-log]');
+  if (reauthLogBtn) {
+    openLog(Number(reauthLogBtn.dataset.reauthLog));
+    return;
+  }
+
+  const reauthBtn = e.target.closest('[data-account-reauth]');
+  if (reauthBtn) {
+    await reauthAccount(Number(reauthBtn.dataset.accountReauth), reauthBtn);
     return;
   }
 

@@ -678,6 +678,203 @@ def insert_account(
         return row_id
 
 
+def create_account_reauth_job(
+    account_id: int,
+    *,
+    email: str,
+    email_source: str,
+) -> tuple[dict, bool]:
+    """Create one re-login job while atomically reserving the account."""
+    with _LOCK:
+        accounts = _load_accounts()
+        account = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if account is None:
+            raise LookupError("账号不存在")
+        if (account.get("email") or "").lower() != (email or "").lower():
+            raise ValueError("账号邮箱已发生变化，请刷新后重试")
+
+        rows = _load_jobs()
+        active_states = {"pending", "running", "stopping"}
+        active = next(
+            (
+                r for r in rows
+                if r.get("job_type") == "account_reauth"
+                and int(r.get("account_id") or 0) == int(account_id)
+                and r.get("status") in active_states
+            ),
+            None,
+        )
+        if active is not None:
+            return dict(active), False
+        codex_active = next(
+            (
+                r for r in rows
+                if r.get("job_type") == "codex_retry"
+                and int(r.get("account_id") or 0) == int(account_id)
+                and r.get("status") in active_states
+            ),
+            None,
+        )
+        if codex_active is not None:
+            raise ValueError(f"该账号正在补跑 Codex，任务 #{codex_active.get('id')} 完成后再重新登录")
+
+        job = _new_job_row(
+            rows,
+            email_source=email_source,
+            job_type="account_reauth",
+            email=email,
+            account_id=int(account_id),
+        )
+        job["root_job_id"] = job["id"]
+        rows.append(job)
+        _save_jobs(rows)
+
+        now = _now()
+        account["reauth_status"] = "queued"
+        account["reauth_job_id"] = int(job["id"])
+        account["reauth_error"] = None
+        account["reauth_queued_at"] = now
+        account["reauth_started_at"] = None
+        account["reauth_completed_at"] = None
+        account["updated_at"] = now
+        _save_accounts(accounts)
+        return dict(job), True
+
+
+def mark_account_reauth_running(account_id: int, job_id: int) -> bool:
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None or int(row.get("reauth_job_id") or 0) != int(job_id):
+            return False
+        if row.get("reauth_status") not in {"queued", "running"}:
+            return False
+        row["reauth_status"] = "running"
+        row["reauth_started_at"] = row.get("reauth_started_at") or _now()
+        row["reauth_error"] = None
+        row["updated_at"] = _now()
+        _save_accounts(accounts)
+        return True
+
+
+def update_account_reauth_failure(account_id: int, job_id: int, error: str) -> bool:
+    """Record failure without touching the existing access token."""
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None:
+            return False
+        if int(row.get("reauth_job_id") or 0) != int(job_id):
+            return False
+        row["reauth_status"] = "failed"
+        row["reauth_error"] = str(error or "重新登录失败")[:500]
+        row["reauth_completed_at"] = _now()
+        row["updated_at"] = _now()
+        _save_accounts(accounts)
+        return True
+
+
+def update_account_after_reauth(
+    account_id: int,
+    job_id: int,
+    *,
+    access_token: str,
+    session_info: dict | None = None,
+    proxy_used: str | None = None,
+    device_id: str | None = None,
+) -> bool:
+    """Atomically replace the token and session metadata on the existing row."""
+    token = str(access_token or "").strip()
+    if not token:
+        raise ValueError("重新登录未返回 access_token")
+    session_info = session_info if isinstance(session_info, dict) else {}
+    user = session_info.get("user") if isinstance(session_info.get("user"), dict) else {}
+    account_info = session_info.get("account") if isinstance(session_info.get("account"), dict) else {}
+
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None:
+            return False
+        if int(row.get("reauth_job_id") or 0) != int(job_id):
+            return False
+
+        row["access_token"] = token
+        if user.get("id") is not None:
+            row["user_id"] = user.get("id")
+        if user.get("name") is not None:
+            row["user_name"] = user.get("name")
+        if account_info.get("planType") is not None:
+            row["plan_type"] = account_info.get("planType")
+        if session_info.get("expires") is not None:
+            row["expires_at"] = session_info.get("expires")
+        if proxy_used is not None:
+            row["proxy_used"] = proxy_used
+        if device_id is not None:
+            row["device_id"] = device_id
+
+        try:
+            extra = json.loads(row.get("extra_json") or "{}")
+        except (TypeError, ValueError):
+            extra = {}
+        if not isinstance(extra, dict):
+            extra = {}
+        extra.update({
+            "user": user,
+            "account": account_info,
+            "expires": session_info.get("expires"),
+            "device_id": device_id,
+            "reauthenticated_at": _now(),
+        })
+        row["extra_json"] = json.dumps(extra, ensure_ascii=False)
+
+        # The old plan failure belongs to the old token. Keep historical success
+        # fields, but clear the current failure before enqueueing a fresh check.
+        row["plan_check_status"] = None
+        row["plan_check_ok"] = None
+        row["plan_check_error"] = None
+        row["plan_check_result_json"] = None
+        row["plan_check_http_status"] = None
+        row["plan_check_completed_at"] = None
+        row["plan_checked_at"] = None
+        row["token_expired"] = None
+        row["token_expires_at"] = None
+        row["reauth_status"] = "success"
+        row["reauth_error"] = None
+        row["reauth_completed_at"] = _now()
+        row["updated_at"] = _now()
+        _save_accounts(accounts)
+        return True
+
+
+def recover_interrupted_account_reauth() -> int:
+    """Mark re-login jobs left active by a WebUI restart as failed."""
+    with _LOCK:
+        jobs = _load_jobs()
+        accounts = _load_accounts()
+        now = _now()
+        recovered = 0
+        account_ids: set[int] = set()
+        for job in jobs:
+            if job.get("job_type") != "account_reauth" or job.get("status") not in {"pending", "running", "stopping"}:
+                continue
+            job["status"] = "failed"
+            job["error_message"] = "WebUI 重启导致重新登录任务中断，请重新提交"
+            job["completed_at"] = now
+            account_ids.add(int(job.get("account_id") or 0))
+            recovered += 1
+        if recovered:
+            _save_jobs(jobs)
+            for row in accounts:
+                if int(row.get("id") or 0) in account_ids and row.get("reauth_status") in {"queued", "running"}:
+                    row["reauth_status"] = "failed"
+                    row["reauth_error"] = "WebUI 重启导致重新登录任务中断，请重新提交"
+                    row["reauth_completed_at"] = now
+                    row["updated_at"] = now
+            _save_accounts(accounts)
+        return recovered
+
+
 def update_account_codex_status(email: str, codex_status: str, codex_error: str | None = None) -> bool:
     """
     单独更新某账号的 codex_status / codex_error（手动补跑 Codex 时用）。
@@ -1946,6 +2143,19 @@ def create_retry_job(
             if active.get("job_type", "registration") != job_type:
                 raise ValueError(f"已有其他类型重试任务 #{active.get('id')} 在排队或运行中")
             return dict(active), False
+
+        if job_type == "codex_retry" and account_id is not None:
+            reauth_active = next(
+                (
+                    r for r in rows
+                    if r.get("job_type") == "account_reauth"
+                    and int(r.get("account_id") or 0) == int(account_id)
+                    and r.get("status") in active_states
+                ),
+                None,
+            )
+            if reauth_active is not None:
+                raise ValueError(f"该账号正在重新登录，任务 #{reauth_active.get('id')} 完成后再补跑 Codex")
 
         attempts = [
             int(r.get("retry_attempt") or 0)

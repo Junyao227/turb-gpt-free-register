@@ -505,7 +505,7 @@ def run_registration(
             },
         )
 
-        logger.info(f"[完成] {email}，账号ID={account_id}，Token={access_token[:16]}...")
+        logger.info(f"[完成] {email}，账号ID={account_id}，登录态已保存")
 
         # ==================== 阶段9: 后置自动触发 flow ====================
         # 只有走完回调、拿到 token 并保存成功的账号，才会触发 flow。
@@ -530,7 +530,7 @@ def run_registration(
                 f"原因={flow_result.get('message')}"
             )
 
-        logger.debug(f"[完成] TOTP Secret: {totp_secret or '(未设置)'}")
+        logger.debug(f"[完成] TOTP Secret 已设置: {bool(totp_secret)}")
 
         # 注册任务的成功判定：账号本身(注册+token)+Codex 授权都成功才算 success。
         # Codex 失败时账号仍保存（token 拿到了、有补跑机会），但任务状态标失败，

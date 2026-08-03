@@ -434,7 +434,7 @@ def send_email_otp(session: BrowserSession, referer: str = "https://auth.openai.
     logger.info("[OTP] 请求重新发送邮箱验证码...")
     resp = session.get(url, headers=headers, allow_redirects=True)
     if resp.status_code >= 400:
-        logger.warning("[OTP] 重新发送验证码失败 status=%s: %s", resp.status_code, (resp.text or '')[:300])
+        logger.warning("[OTP] 重新发送验证码失败 status=%s", resp.status_code)
         resp.raise_for_status()
     logger.info("[OTP] 重新发送验证码请求完成，status=%s", resp.status_code)
 
@@ -468,12 +468,12 @@ def validate_email_otp(session: BrowserSession, code: str, sentinel_header: str 
 
     body = json.dumps({"code": code})
 
-    logger.info(f"[步骤10] 提交邮箱验证码: {code}")
+    logger.info("[步骤10] 提交邮箱验证码")
     resp = session.post(url, headers=headers, data=body)
 
     if resp.status_code != 200:
         logger.error(f"[步骤10] 请求失败, 状态码: {resp.status_code}")
-        logger.error(f"[步骤10] 响应内容: {resp.text}")
+        logger.error("[步骤10] 已收到失败响应")
         # 先看是不是"账号已废"——这类邮箱再试也没用，单独抛出让上层标 failed
         err_code = _extract_error_code(resp)
         if err_code in _ACCOUNT_DEAD_CODES:
