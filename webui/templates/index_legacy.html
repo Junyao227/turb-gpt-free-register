@@ -637,7 +637,12 @@
         <div id="configBanner" class="banner info">修改后点"保存"，<b>立即生效</b>（自动热加载，无需重启）。</div>
         <div id="configTabs" class="config-tabs"></div>
         <div id="configForm">加载中…</div>
-        <div style="margin-top:8px;"><button class="btn primary" id="btnSaveConfig">保存配置</button></div>
+        <div class="buttons" style="margin-top:8px;">
+          <button class="btn primary" id="btnSaveConfig">保存配置</button>
+          <button class="btn" id="btnExportRuntimeConfig" title="导出本页全部已保存配置（包含密钥）">导出 JSON</button>
+          <button class="btn" id="btnImportRuntimeConfig" title="从 JSON 文件导入并覆盖对应配置项">导入 JSON</button>
+          <input type="file" id="runtimeConfigFile" accept="application/json,.json" hidden>
+        </div>
       </div>
     </section>
   </div>
@@ -3099,6 +3104,79 @@ async function loadConfig() {
     $('#configForm').innerHTML = `<div class="banner warn">${esc(e.message)}</div>`;
   }
 }
+
+async function exportRuntimeConfig() {
+  if (Object.keys(CONFIG_PENDING_UPDATES).length && !confirm('当前页面有未保存的修改。导出文件只包含已保存配置，是否继续？')) return;
+  const btn = $('#btnExportRuntimeConfig');
+  btn.disabled = true;
+  try {
+    const response = await fetch('/api/config/export');
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const link = document.createElement('a');
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = match ? match[1] : 'runtime-config.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    showToast('运行配置已导出');
+  } catch (e) {
+    showToast('导出失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function importRuntimeConfig(file) {
+  const input = $('#runtimeConfigFile');
+  const btn = $('#btnImportRuntimeConfig');
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    showToast('导入失败: 配置文件超过 2 MB');
+    input.value = '';
+    return;
+  }
+  btn.disabled = true;
+  try {
+    let documentData;
+    try {
+      documentData = JSON.parse(await file.text());
+    } catch (e) {
+      throw new Error('文件不是有效的 JSON');
+    }
+    const count = documentData && documentData.config && typeof documentData.config === 'object'
+      ? Object.keys(documentData.config).length : 0;
+    if (!count) throw new Error('文件中没有运行配置项');
+    if (!confirm(`将从 ${file.name} 导入 ${count} 项配置，并覆盖文件中对应的当前值。继续吗？`)) return;
+    const result = await api('/api/config/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(documentData),
+    });
+    Object.keys(CONFIG_PENDING_UPDATES).forEach(key => delete CONFIG_PENDING_UPDATES[key]);
+    await loadConfig();
+    const ignored = result.ignored && result.ignored.length ? `，忽略 ${result.ignored.length} 项未知配置` : '';
+    $('#configBanner').className = result.reloaded ? 'banner info' : 'banner warn';
+    $('#configBanner').textContent = `已导入 ${result.imported} 项${ignored}${result.reloaded ? '，配置已热加载' : '，重启后生效'}`;
+    showToast(`已导入 ${result.imported} 项${ignored}`);
+  } catch (e) {
+    showToast('导入失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    input.value = '';
+  }
+}
+
+$('#btnExportRuntimeConfig').addEventListener('click', exportRuntimeConfig);
+$('#btnImportRuntimeConfig').addEventListener('click', () => $('#runtimeConfigFile').click());
+$('#runtimeConfigFile').addEventListener('change', (e) => importRuntimeConfig(e.target.files && e.target.files[0]));
 
 $('#configTabs').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-config-group]');

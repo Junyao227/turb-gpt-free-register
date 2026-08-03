@@ -10,13 +10,17 @@
     4. 读取时优先 `.env`，缺失时回退解析 `config/*.py` 默认值。
 """
 import ast
+import math
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_DIR = _PROJECT_ROOT / "config"
 EXPLICIT_EMPTY_LIST_KEYS = {"PROXY_POOL"}
+RUNTIME_CONFIG_FORMAT = "turb-gpt-free-register.runtime-config"
+RUNTIME_CONFIG_VERSION = 1
 
 
 # ============================================================
@@ -827,6 +831,72 @@ def get_config() -> list[dict]:
         item["value"] = value
         out.append(item)
     return out
+
+
+def build_runtime_config_export(*, exported_at: str | None = None) -> dict:
+    """构造只包含 WebUI 可编辑项的可移植 JSON 配置文档。"""
+    fields = get_config()
+    values = {item["key"]: item.get("value") for item in fields}
+    if exported_at is None:
+        exported_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return {
+        "format": RUNTIME_CONFIG_FORMAT,
+        "version": RUNTIME_CONFIG_VERSION,
+        "exported_at": exported_at,
+        "includes_secrets": any(bool(item.get("secret")) for item in fields),
+        "field_count": len(values),
+        "config": values,
+    }
+
+
+def _validate_import_value(key: str, value, vtype: str):
+    if vtype == "str":
+        if not isinstance(value, str):
+            raise ValueError(f"配置项 {key} 必须是字符串")
+        return value
+    if vtype == "bool":
+        if type(value) is not bool:
+            raise ValueError(f"配置项 {key} 必须是布尔值")
+        return value
+    if vtype == "int":
+        if type(value) is not int:
+            raise ValueError(f"配置项 {key} 必须是整数")
+        return value
+    if vtype == "float":
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"配置项 {key} 必须是有限数值")
+        return value
+    if vtype == "list_str_multiline":
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            raise ValueError(f"配置项 {key} 必须是字符串数组")
+        return value
+    raise ValueError(f"配置项 {key} 使用了未知类型 {vtype}")
+
+
+def parse_runtime_config_import(document) -> dict:
+    """校验导出的 JSON 文档，仅返回当前版本可识别的白名单配置。"""
+    if not isinstance(document, dict):
+        raise ValueError("配置文件根节点必须是 JSON 对象")
+    if document.get("format") != RUNTIME_CONFIG_FORMAT:
+        raise ValueError("配置文件格式标识不匹配")
+    if document.get("version") != RUNTIME_CONFIG_VERSION:
+        raise ValueError(f"不支持的配置文件版本: {document.get('version')}")
+
+    values = document.get("config")
+    if not isinstance(values, dict):
+        raise ValueError("配置文件缺少 config 对象")
+
+    updates = {}
+    ignored = []
+    for key, value in values.items():
+        field = _FIELD_BY_KEY.get(key)
+        if field is None:
+            ignored.append(key)
+            continue
+        updates[key] = _validate_import_value(key, value, field["type"])
+    if not updates:
+        raise ValueError("配置文件中没有可导入的运行配置项")
+    return {"updates": updates, "ignored": ignored}
 
 
 # ============================================================

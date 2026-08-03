@@ -10,6 +10,7 @@ Flask 本地控制台。
 所有接口返回 JSON；前端是单文件 templates/index.html（原生 JS + fetch）。
 默认绑定 127.0.0.1，仅本地访问。
 """
+import json
 import logging
 import threading
 import time
@@ -2261,6 +2262,63 @@ def create_app(auth_code: str | None = None) -> Flask:
     @app.get("/api/config")
     def api_config_get():
         return jsonify(config_editor.get_config())
+
+    @app.get("/api/config/export")
+    def api_config_export():
+        document = config_editor.build_runtime_config_export()
+        content = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        filename = f"runtime-config-{time.strftime('%Y%m%d-%H%M%S')}.json"
+        return Response(
+            content,
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(content)),
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "X-Download-Options": "noopen",
+            },
+        )
+
+    @app.post("/api/config/import")
+    def api_config_import():
+        if request.content_length and request.content_length > 2 * 1024 * 1024:
+            return jsonify({"ok": False, "error": "配置文件超过 2 MB 限制"}), 413
+        document = request.get_json(silent=True)
+        if document is None:
+            return jsonify({"ok": False, "error": "请求内容不是有效的 JSON 配置文件"}), 400
+        try:
+            parsed = config_editor.parse_runtime_config_import(document)
+            result = config_editor.update_config(parsed["updates"])
+        except (TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            logger.exception("运行配置导入失败")
+            return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
+
+        reload_ok = True
+        reload_err = ""
+        try:
+            import config as _config_pkg
+            _config_pkg.reload_all()
+        except Exception as exc:
+            reload_ok = False
+            reload_err = f"{type(exc).__name__}: {exc}"
+            logger.exception("导入运行配置后的热加载失败")
+
+        ignored = list(parsed["ignored"])
+        for key in result.get("ignored", []):
+            if key not in ignored:
+                ignored.append(key)
+        return jsonify({
+            "ok": True,
+            "imported": len(result.get("updated", [])),
+            "updated": result.get("updated", []),
+            "ignored": ignored,
+            "reloaded": reload_ok,
+            "note": "" if reload_ok else reload_err,
+        })
 
     def _smsbower_client(data: dict):
         from config import codex as codex_config

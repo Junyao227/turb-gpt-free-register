@@ -1797,6 +1797,19 @@
       border: 1px solid #ebeef5; border-radius: 10px; background: #fff;
       box-shadow: 0 0 12px rgba(0,0,0,.04);
     }
+    .config-overview-v2-head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
+    }
+    .config-overview-v2-copy { min-width: 0; }
+    .config-transfer-v2-actions {
+      display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px;
+      flex: 0 0 auto;
+    }
+    .config-transfer-v2-actions .btn { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .config-transfer-v2-actions .btn svg {
+      width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
     .config-overview-v2-title {
       margin: 0; font-size: 28px; font-weight: 700; color: #303133;
       letter-spacing: -0.02em; line-height: 1.25;
@@ -1808,6 +1821,8 @@
     @media (max-width: 700px) {
       .config-overview-v2 { padding: 18px 16px; }
       .config-overview-v2-title { font-size: 24px; }
+      .config-overview-v2-head { flex-direction: column; }
+      .config-transfer-v2-actions { width: 100%; justify-content: flex-start; }
     }
 
     @media (max-width: 700px) {
@@ -2252,8 +2267,23 @@
   <!-- ============ 配置 ============ -->
   <div id="tab-config" class="hidden">
     <div class="config-overview-v2" id="configOverviewV2" aria-label="配置概览">
-      <h1 class="config-overview-v2-title">运行配置</h1>
-      <p class="config-overview-v2-desc">仅开放运行时安全的开关与数值。协议级常量（client_id / sentinel 版本）不在此处，避免误改废号。修改后点保存即可热加载生效，无需重启。</p>
+      <div class="config-overview-v2-head">
+        <div class="config-overview-v2-copy">
+          <h1 class="config-overview-v2-title">运行配置</h1>
+          <p class="config-overview-v2-desc">仅开放运行时安全的开关与数值。协议级常量（client_id / sentinel 版本）不在此处，避免误改废号。修改后点保存即可热加载生效，无需重启。</p>
+        </div>
+        <div class="config-transfer-v2-actions" aria-label="运行配置导入导出">
+          <button type="button" class="btn" id="btnExportRuntimeConfigV2" title="导出本页全部已保存配置（包含密钥）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            <span>导出 JSON</span>
+          </button>
+          <button type="button" class="btn primary" id="btnImportRuntimeConfigV2" title="从 JSON 文件导入并覆盖对应配置项">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 21h14"/></svg>
+            <span>导入 JSON</span>
+          </button>
+          <input type="file" id="runtimeConfigFileV2" accept="application/json,.json" hidden>
+        </div>
+      </div>
     </div>
 
     <!-- 配置布局：左侧导航 + 右侧卡片/分区 -->
@@ -5829,6 +5859,77 @@ async function loadConfig() {
     showToast('加载配置失败: ' + e.message);
   }
 }
+
+async function exportRuntimeConfigV2() {
+  if (Object.keys(CONFIG_PENDING_UPDATES).length && !confirm('当前页面有未保存的修改。导出文件只包含已保存配置，是否继续？')) return;
+  const btn = $('#btnExportRuntimeConfigV2');
+  btn.disabled = true;
+  try {
+    const response = await fetch('/api/config/export');
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const link = document.createElement('a');
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = match ? match[1] : 'runtime-config.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    showToast('运行配置已导出');
+  } catch (e) {
+    showToast('导出失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function importRuntimeConfigV2(file) {
+  const input = $('#runtimeConfigFileV2');
+  const btn = $('#btnImportRuntimeConfigV2');
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    showToast('导入失败: 配置文件超过 2 MB');
+    input.value = '';
+    return;
+  }
+  btn.disabled = true;
+  try {
+    let documentData;
+    try {
+      documentData = JSON.parse(await file.text());
+    } catch (e) {
+      throw new Error('文件不是有效的 JSON');
+    }
+    const count = documentData && documentData.config && typeof documentData.config === 'object'
+      ? Object.keys(documentData.config).length : 0;
+    if (!count) throw new Error('文件中没有运行配置项');
+    if (!confirm(`将从 ${file.name} 导入 ${count} 项配置，并覆盖文件中对应的当前值。继续吗？`)) return;
+    const result = await api('/api/config/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(documentData),
+    });
+    Object.keys(CONFIG_PENDING_UPDATES).forEach(key => delete CONFIG_PENDING_UPDATES[key]);
+    await loadConfig();
+    const ignored = result.ignored && result.ignored.length ? `，忽略 ${result.ignored.length} 项未知配置` : '';
+    showToast(`已导入 ${result.imported} 项${ignored}${result.reloaded ? '' : '，重启后生效'}`);
+  } catch (e) {
+    showToast('导入失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    input.value = '';
+  }
+}
+
+$('#btnExportRuntimeConfigV2').addEventListener('click', exportRuntimeConfigV2);
+$('#btnImportRuntimeConfigV2').addEventListener('click', () => $('#runtimeConfigFileV2').click());
+$('#runtimeConfigFileV2').addEventListener('change', (e) => importRuntimeConfigV2(e.target.files && e.target.files[0]));
 
 async function loadRoxyWorkspaces() {
   const status = $('#roxyWorkspaceStatusV2');
