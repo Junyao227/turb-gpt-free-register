@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/08-03-chatgpt-refresh-token-lifecycle/research/code-map.md", "reason": "Maps current account persistence, registration completion, Codex OAuth separation and WebUI account action boundaries."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "The feature crosses registration, OAuth refresh, account storage, export and both WebUI variants; use the cross-layer checklist to preserve token semantics."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Token normalization, refresh response merge and redaction must be shared across registration, reauthentication and manual refresh paths."}

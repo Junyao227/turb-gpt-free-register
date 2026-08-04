@@ -95,6 +95,9 @@ def _compact_account_for_list(row: dict) -> dict:
         "plan_type", "current_plan_type", "plus_trial_eligible",
         "plan_check_status", "codex_status", "codex_agent_status",
         "reauth_status", "reauth_job_id", "reauth_completed_at",
+        "has_chatgpt_refresh_token", "can_refresh_chatgpt_token",
+        "chatgpt_token_refresh_status", "chatgpt_token_expires_at",
+        "chatgpt_token_last_refreshed_at",
     ):
         if key in row:
             out[key] = row.get(key)
@@ -115,7 +118,7 @@ def _compact_account_for_list(row: dict) -> dict:
         # Codex / Agent 状态提示。
         "codex_error", "codex_agent_message", "codex_agent_runtime_id",
         "codex_agent_sub2api_url", "codex_agent_sub2api_mode", "codex_agent_sub2api_total",
-        "reauth_error",
+        "reauth_error", "chatgpt_token_refresh_error",
     )
     for key in optional_keys:
         value = row.get(key)
@@ -297,7 +300,10 @@ def create_app(auth_code: str | None = None) -> Flask:
             result["items"] = [_compact_account_for_list(r) for r in (result.get("items") or [])]
             result.update({"ok": True, "page": page, "page_size": page_size, "compact": True})
             return jsonify(result)
-        return jsonify(db.list_accounts(limit=limit, archived=archived, plan_filter=plan_filter, q=q))
+        return jsonify([
+            _compact_account_for_list(row)
+            for row in db.list_accounts(limit=limit, archived=archived, plan_filter=plan_filter, q=q)
+        ])
 
     @app.get("/api/accounts/plan-check-status")
     def api_account_plan_check_status():
@@ -368,6 +374,33 @@ def create_app(auth_code: str | None = None) -> Flask:
             return jsonify(result), status
         result.pop("status", None)
         return jsonify(result), 202
+
+    @app.post("/api/accounts/<int:acc_id>/refresh-token")
+    def api_account_refresh_token(acc_id: int):
+        """Refresh a saved ChatGPT OAuth credential without returning secrets."""
+        from core.chatgpt_token_lifecycle import refresh_account
+
+        result = refresh_account(acc_id)
+        return jsonify({
+            "ok": result.get("status") == "refreshed",
+            "account_id": acc_id,
+            "status": result.get("status"),
+            "error": result.get("error") or "",
+        })
+
+    @app.post("/api/accounts/refresh-token-bulk")
+    def api_accounts_refresh_token_bulk():
+        """Refresh selected saved ChatGPT OAuth credentials with safe counts only."""
+        from core.chatgpt_token_lifecycle import refresh_accounts
+
+        data = request.get_json(silent=True) or {}
+        ids = data.get("account_ids") or data.get("ids") or []
+        if not isinstance(ids, list) or not ids:
+            return jsonify({"ok": False, "error": "account_ids must be a non-empty array"}), 400
+        if len(ids) > 500:
+            return jsonify({"ok": False, "error": "at most 500 accounts can be refreshed at once"}), 400
+        result = refresh_accounts(ids)
+        return jsonify({"ok": True, **result})
 
     @app.post("/api/accounts/secret-bulk")
     def api_accounts_secret_bulk():

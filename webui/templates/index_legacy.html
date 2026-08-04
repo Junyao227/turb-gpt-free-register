@@ -486,6 +486,10 @@
             <button class="btn danger" id="btnStopSelectedCodex" disabled title="停止选中账号中正在补跑的 Codex 授权">停止</button>
           </div>
           <div class="btn-group">
+            <span class="btn-group-title">Token</span>
+            <button class="btn primary" id="btnRefreshSelectedChatGPTTokens" disabled title="使用已保存的 ChatGPT OAuth refresh token 刷新选中账号；没有可用 refresh token 的账号会自动跳过">刷新 Token</button>
+          </div>
+          <div class="btn-group">
             <span class="btn-group-title">批量</span>
             <button class="btn good" id="btnNoteSelectedAccounts" disabled title="给选中的账号统一设置备注，留空可清空备注">备注</button>
             <button class="btn good" id="btnCopySelectedLines" disabled title="复制选中账号的完整整行，每个账号一行">复制行</button>
@@ -1374,6 +1378,15 @@ function _reauthAction(r) {
   const title = r.reauth_error ? `上次重新登录失败：${r.reauth_error}` : '重新走 ChatGPT 邮箱 OTP 登录，不会新建账号或补跑 Codex';
   return `<button data-account-reauth="${esc(r.id)}" title="${esc(title)}">${label}</button>${job}`;
 }
+function _chatgptTokenRefreshAction(r) {
+  const status = r.chatgpt_token_refresh_status || 'unavailable';
+  if (!r.can_refresh_chatgpt_token) {
+    return `<button disabled title="该账号没有可用于刷新 ChatGPT Token 的 OAuth refresh token">Token 不可刷新</button>`;
+  }
+  const label = status === 'failed' ? '重试刷新 Token' : '刷新 Token';
+  const title = r.chatgpt_token_refresh_error || '使用已保存的 ChatGPT OAuth refresh token 刷新 access token';
+  return `<button data-chatgpt-token-refresh="${esc(r.id)}" title="${esc(title)}">${label}</button>`;
+}
 function renderAccounts() {
   const p = PAGERS.accounts;
   const total = ACCOUNTS_TOTAL;
@@ -1384,7 +1397,7 @@ function renderAccounts() {
       <td class="muted">#${esc(r.id)}</td>
       <td><div class="main-cell">${esc(r.email)}${r.archived ? ' <span class="pill status-used" title="该账号已归档">归档</span>' : ''}</div><div class="sub-cell">${esc(r.user_name || '-')}</div></td>
       <td>${esc(r.email_source || '-')}</td>
-      <td><span class="mono" title="列表仅显示预览，完整 Token 请点复制">${r.has_access_token ? '有Token' : '<span class="muted">无Token</span>'}</span></td>
+      <td><span class="mono" title="列表仅显示预览，完整 Token 请点复制">${r.has_access_token ? '有Token' : '<span class="muted">无Token</span>'}</span>${r.can_refresh_chatgpt_token ? ' <span class="pill status-success" title="ChatGPT OAuth refresh token 可用">可刷新</span>' : ' <span class="pill status-used" title="未保存可用的 ChatGPT OAuth refresh token">不可刷新</span>'}</td>
       <td>${_planCell(r)}<div class="sub-cell">${_extractLinkCell(r)}</div></td>
       <td class="wrap" title="${esc(r.note || '')}">${r.note ? esc(short(r.note, 80)) : '<span class="muted">-</span>'}</td>
       <td>${r.totp_enabled ? '已启用' : '<span class="muted">未启用</span>'}</td>
@@ -1395,7 +1408,7 @@ function renderAccounts() {
         <div class="account-row-actions">
           <div class="account-action-group"><button class="primary" data-account-copy-secret="access_token" data-account-id="${esc(r.id)}" ${r.has_access_token ? '' : 'disabled'}>复制Token</button> <button class="good" data-account-copy-secret="copy_line" data-account-id="${esc(r.id)}">复制整行</button></div>
           <div class="account-action-group"><button data-account-note="${esc(r.id)}" title="设置/清空该账号备注">备注</button> ${_planAction(r)} ${_extractLinkAction(r)}</div>
-          <div class="account-action-group">${_codexAction(r)} ${_reauthAction(r)} <button data-codex-log="${esc(r.email)}" title="查看该账号最近一次 Codex 补跑日志">补跑日志</button></div>
+          <div class="account-action-group">${_codexAction(r)} ${_chatgptTokenRefreshAction(r)} ${_reauthAction(r)} <button data-codex-log="${esc(r.email)}" title="查看该账号最近一次 Codex 补跑日志">补跑日志</button></div>
           <div class="account-action-group danger-zone"><button data-account-archive="${esc(r.id)}" data-archived="${r.archived ? '0' : '1'}" title="${r.archived ? '恢复到默认账号列表' : '归档后默认账号列表不再显示'}">${r.archived ? '恢复' : '归档'}</button> <button class="danger" data-account-delete="${esc(r.id)}" data-email="${esc(r.email)}">删除</button></div>
         </div>
       </td>
@@ -1415,6 +1428,7 @@ function updateAccountSelectionUi(pageRows = null) {
   const downloadAgentBtn = $('#btnDownloadSelectedAgent');
   const uploadAgentSub2Btn = $('#btnUploadSelectedAgentSub2');
   const checkPlanBtn = $('#btnCheckSelectedPlans');
+  const refreshChatgptTokensBtn = $('#btnRefreshSelectedChatGPTTokens');
   const copySelectedBtn = $('#btnCopySelectedLines');
   const downloadTxtBtn = $('#btnDownloadSelectedTxt');
   const noteSelectedBtn = $('#btnNoteSelectedAccounts');
@@ -1429,6 +1443,7 @@ function updateAccountSelectionUi(pageRows = null) {
   if (downloadAgentBtn) downloadAgentBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (uploadAgentSub2Btn) uploadAgentSub2Btn.disabled = ACCOUNT_SELECTED.size === 0;
   if (checkPlanBtn) checkPlanBtn.disabled = ACCOUNT_SELECTED.size === 0;
+  if (refreshChatgptTokensBtn) refreshChatgptTokensBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (copySelectedBtn) copySelectedBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (downloadTxtBtn) downloadTxtBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (noteSelectedBtn) noteSelectedBtn.disabled = ACCOUNT_SELECTED.size === 0;
@@ -1492,6 +1507,22 @@ async function reauthAccount(accountId, btn) {
     if (r.job?.id) openLog(Number(r.job.id));
   } catch (err) {
     showToast('重新登录提交失败: ' + err.message);
+    if (btn) btn.disabled = false;
+  }
+}
+async function refreshChatgptToken(accountId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api(`/api/accounts/${encodeURIComponent(accountId)}/refresh-token`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+    });
+    if (r.status === 'refreshed') showToast('ChatGPT Token 已刷新');
+    else if (r.status === 'skipped') showToast('该账号没有可刷新 Token');
+    else showToast('刷新 Token 失败: ' + (r.error || '未知错误'));
+    await loadAccounts();
+  } catch (err) {
+    showToast('刷新 Token 失败: ' + err.message);
+  } finally {
     if (btn) btn.disabled = false;
   }
 }
@@ -1588,6 +1619,12 @@ $('#accountsBody').addEventListener('click', async (e) => {
     return;
   }
 
+  const refreshTokenBtn = e.target.closest('[data-chatgpt-token-refresh]');
+  if (refreshTokenBtn) {
+    await refreshChatgptToken(Number(refreshTokenBtn.dataset.chatgptTokenRefresh), refreshTokenBtn);
+    return;
+  }
+
   const stopCodexBtn = e.target.closest('[data-codex-stop]');
   if (stopCodexBtn) {
     const email = stopCodexBtn.dataset.codexStop;
@@ -1672,6 +1709,7 @@ $('#btnRetrySelectedCodex').addEventListener('click', retrySelectedCodex);
 $('#btnDownloadSelectedCpa').addEventListener('click', downloadSelectedCpa);
 $('#btnStopSelectedCodex').addEventListener('click', stopSelectedCodex);
 $('#btnCheckSelectedPlans').addEventListener('click', checkSelectedPlans);
+$('#btnRefreshSelectedChatGPTTokens').addEventListener('click', refreshSelectedChatgptTokens);
 $('#showArchivedAccounts').addEventListener('change', async (e) => {
   SHOW_ARCHIVED_ACCOUNTS = !!e.target.checked;
   ACCOUNT_SELECTED.clear();
@@ -2054,6 +2092,28 @@ async function checkSelectedPlans() {
     updateAccountSelectionUi();
   } finally {
     btn.textContent = old;
+  }
+}
+
+async function refreshSelectedChatgptTokens() {
+  const ids = Array.from(ACCOUNT_SELECTED);
+  if (ids.length === 0) { showToast('请先选择账号'); return; }
+  const btn = $('#btnRefreshSelectedChatGPTTokens');
+  if (!btn) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '刷新中...';
+  try {
+    const r = await api('/api/accounts/refresh-token-bulk', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({account_ids: ids})
+    });
+    showToast(`已刷新 ${r.refreshed_count || 0} 个，跳过 ${r.skipped_count || 0} 个，失败 ${r.failed_count || 0} 个`);
+    await loadAccounts();
+  } catch (err) {
+    showToast('批量刷新 Token 失败: ' + err.message);
+  } finally {
+    btn.textContent = old;
+    updateAccountSelectionUi();
   }
 }
 

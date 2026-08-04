@@ -2096,6 +2096,10 @@
           <button type="button" class="jobs-tb-btn jobs-tb-btn--danger" id="btnStopSelectedCodexV2" disabled title="停止选中账号中正在补跑的 Codex 授权">停止</button>
         </div>
         <div class="acc-v2-btn-group">
+          <span class="acc-v2-btn-group-title">Token</span>
+          <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnRefreshSelectedChatGPTTokensV2" disabled title="使用已保存的 ChatGPT OAuth refresh token 刷新选中账号；没有可用 refresh token 的账号会自动跳过">刷新 Token</button>
+        </div>
+        <div class="acc-v2-btn-group">
           <span class="acc-v2-btn-group-title">批量</span>
           <button type="button" class="jobs-tb-btn jobs-tb-btn--good" id="btnNoteSelectedAccountsV2" disabled title="给选中的账号统一设置备注，留空可清空备注">备注</button>
           <button type="button" class="jobs-tb-btn jobs-tb-btn--good" id="btnCopySelectedLinesV2" disabled title="复制选中账号的完整整行，每个账号一行">复制行</button>
@@ -3270,9 +3274,21 @@ function _reauthAction(r) {
   const title = r.reauth_error ? `上次重新登录失败：${r.reauth_error}` : '重新走 ChatGPT 邮箱 OTP 登录，不会新建账号或补跑 Codex';
   return `<button data-account-reauth="${esc(r.id)}" title="${esc(title)}">${label}</button>${job}`;
 }
+function _chatgptTokenRefreshAction(r) {
+  const status = r.chatgpt_token_refresh_status || 'unavailable';
+  if (!r.can_refresh_chatgpt_token) {
+    return `<button disabled title="该账号没有可用于刷新 ChatGPT Token 的 OAuth refresh token">Token 不可刷新</button>`;
+  }
+  const label = status === 'failed' ? '重试刷新 Token' : '刷新 Token';
+  const title = r.chatgpt_token_refresh_error || '使用已保存的 ChatGPT OAuth refresh token 刷新 access token';
+  return `<button data-chatgpt-token-refresh="${esc(r.id)}" title="${esc(title)}">${label}</button>`;
+}
 function _tokenCellV2(r) {
   if (r.has_access_token) {
-    return `<button type="button" class="acc-v2-token-copy" data-account-copy-secret="access_token" data-account-id="${esc(r.id)}" title="复制完整 Token">复制</button>`;
+    const refresh = r.can_refresh_chatgpt_token
+      ? `<span class="pill status-success" title="ChatGPT OAuth refresh token 可用">可刷新</span>`
+      : `<span class="pill status-used" title="未保存可用的 ChatGPT OAuth refresh token">不可刷新</span>`;
+    return `<button type="button" class="acc-v2-token-copy" data-account-copy-secret="access_token" data-account-id="${esc(r.id)}" title="复制完整 Token">复制</button>${refresh}`;
   }
   return `<span class="pill status-failed">无Token</span>`;
 }
@@ -3283,6 +3299,7 @@ function _accountsV2MoreMenu(r) {
     _planAction(r),
     _extractLinkAction(r),
     _codexAction(r),
+    _chatgptTokenRefreshAction(r),
     _reauthAction(r),
     `<button type="button" data-codex-log="${esc(r.email)}" title="查看该账号最近一次 Codex 补跑日志">补跑日志</button>`,
     `<button type="button" data-account-archive="${esc(r.id)}" data-archived="${r.archived ? '0' : '1'}" title="${r.archived ? '恢复到默认账号列表' : '归档后默认账号列表不再显示'}">${r.archived ? '恢复' : '归档'}</button>`,
@@ -3360,6 +3377,7 @@ function updateAccountSelectionUi(pageRows = null) {
     'btnCheckSelectedPlansV2', 'btnExtractSelectedLinksV2',
     'btnGenerateSelectedAgentV2', 'btnDownloadSelectedAgentV2', 'btnUploadSelectedAgentSub2V2',
     'btnRetrySelectedCodexV2', 'btnDownloadSelectedCpaV2', 'btnStopSelectedCodexV2',
+    'btnRefreshSelectedChatGPTTokensV2',
     'btnNoteSelectedAccountsV2', 'btnCopySelectedLinesV2',
     'btnDownloadSelectedTxtV2', 'btnArchiveSelectedAccountsV2', 'btnDeleteSelectedAccountsV2',
   ];
@@ -3426,6 +3444,22 @@ async function reauthAccount(accountId, btn) {
     if (r.job?.id) openLog(Number(r.job.id));
   } catch (err) {
     showToast('重新登录提交失败: ' + err.message);
+    if (btn) btn.disabled = false;
+  }
+}
+async function refreshChatgptToken(accountId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api(`/api/accounts/${encodeURIComponent(accountId)}/refresh-token`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+    });
+    if (r.status === 'refreshed') showToast('ChatGPT Token 已刷新');
+    else if (r.status === 'skipped') showToast('该账号没有可刷新 Token');
+    else showToast('刷新 Token 失败: ' + (r.error || '未知错误'));
+    await loadAccounts();
+  } catch (err) {
+    showToast('刷新 Token 失败: ' + err.message);
+  } finally {
     if (btn) btn.disabled = false;
   }
 }
@@ -3539,6 +3573,12 @@ async function onAccountsBodyClick(e) {
   const reauthBtn = e.target.closest('[data-account-reauth]');
   if (reauthBtn) {
     await reauthAccount(Number(reauthBtn.dataset.accountReauth), reauthBtn);
+    return;
+  }
+
+  const refreshTokenBtn = e.target.closest('[data-chatgpt-token-refresh]');
+  if (refreshTokenBtn) {
+    await refreshChatgptToken(Number(refreshTokenBtn.dataset.chatgptTokenRefresh), refreshTokenBtn);
     return;
   }
 
@@ -4039,6 +4079,28 @@ async function checkSelectedPlans() {
   }
 }
 
+async function refreshSelectedChatgptTokens() {
+  const ids = Array.from(ACCOUNT_SELECTED);
+  if (ids.length === 0) { showToast('请先选择账号'); return; }
+  const btn = $('#btnRefreshSelectedChatGPTTokensV2');
+  if (!btn) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '刷新中...';
+  try {
+    const r = await api('/api/accounts/refresh-token-bulk', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({account_ids: ids})
+    });
+    showToast(`已刷新 ${r.refreshed_count || 0} 个，跳过 ${r.skipped_count || 0} 个，失败 ${r.failed_count || 0} 个`);
+    await loadAccounts();
+  } catch (err) {
+    showToast('批量刷新 Token 失败: ' + err.message);
+  } finally {
+    btn.textContent = old;
+    updateAccountSelectionUi();
+  }
+}
+
 async function deleteAccount(id, email, btn) {
   if (!confirm(`确定删除账号 #${id}？\n\n${email || ''}\n\n会从本地账号列表、注册成功邮箱和 token 文件中移除。`)) return;
   btn.disabled = true;
@@ -4271,6 +4333,7 @@ async function copySelectedAccountTokens() {
   bind('btnRetrySelectedCodexV2', retrySelectedCodex);
   bind('btnDownloadSelectedCpaV2', downloadSelectedCpa);
   bind('btnStopSelectedCodexV2', stopSelectedCodex);
+  bind('btnRefreshSelectedChatGPTTokensV2', refreshSelectedChatgptTokens);
   bind('btnNoteSelectedAccountsV2', noteSelectedAccounts);
   bind('btnCopySelectedLinesV2', copySelectedAccountLines);
   bind('btnCopyAllTokensV2', copyCurrentPageTokens);

@@ -519,6 +519,15 @@ def _decorate_account(row: dict) -> dict:
     out = dict(row)
     out["note"] = out.get("note") or ""
     out["note_updated_at"] = out.get("note_updated_at") or ""
+    try:
+        extra = json.loads(out.get("extra_json") or "{}")
+    except (TypeError, ValueError):
+        extra = {}
+    if not isinstance(extra, dict):
+        extra = {}
+    from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, summarize_tokens
+
+    out.update(summarize_tokens(extra.get(TOKEN_STORAGE_KEY)))
     plan_status = out.get("plan_check_status")
     if plan_status in {"queued", "running"}:
         try:
@@ -629,7 +638,18 @@ def insert_account(
         outlook_rows = _load_outlook()
         existing = _find_by_email(accounts, email)
         outlook_row = _find_by_email(outlook_rows, email)
-        extra_json = json.dumps(extra, ensure_ascii=False) if extra else None
+        from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, normalize_tokens
+
+        extra = dict(extra) if isinstance(extra, dict) else {}
+        # A session-only registration remains explicitly unavailable. A backend
+        # with a real OAuth response can provide it in this nested field.
+        extra[TOKEN_STORAGE_KEY] = normalize_tokens(
+            extra.get(TOKEN_STORAGE_KEY),
+            fallback_access_token=access_token,
+            session_expires_at=extra.get("expires"),
+            source="registration",
+        )
+        extra_json = json.dumps(extra, ensure_ascii=False)
 
         if existing is None:
             row_id = _next_id(accounts)
@@ -819,6 +839,13 @@ def update_account_after_reauth(
             extra = {}
         if not isinstance(extra, dict):
             extra = {}
+        from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, preserve_after_session_reauth
+
+        extra[TOKEN_STORAGE_KEY] = preserve_after_session_reauth(
+            extra.get(TOKEN_STORAGE_KEY),
+            access_token=token,
+            expires_at=session_info.get("expires"),
+        )
         extra.update({
             "user": user,
             "account": account_info,
@@ -842,6 +869,102 @@ def update_account_after_reauth(
         row["reauth_status"] = "success"
         row["reauth_error"] = None
         row["reauth_completed_at"] = _now()
+        row["updated_at"] = _now()
+        _save_accounts(accounts)
+        return True
+
+
+def _account_extra(row: dict) -> dict:
+    try:
+        extra = json.loads(row.get("extra_json") or "{}")
+    except (TypeError, ValueError):
+        extra = {}
+    return extra if isinstance(extra, dict) else {}
+
+
+def get_chatgpt_oauth_tokens(account_id: int) -> dict:
+    """Read the dedicated ChatGPT OAuth object without touching mailbox data."""
+    from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, normalize_tokens
+
+    with _LOCK:
+        row = next((r for r in _load_accounts() if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None:
+            return {}
+        extra = _account_extra(row)
+        return normalize_tokens(extra.get(TOKEN_STORAGE_KEY), previous=extra.get(TOKEN_STORAGE_KEY))
+
+
+def update_chatgpt_oauth_tokens(account_id: int, tokens: dict) -> bool:
+    """Persist externally captured ChatGPT OAuth tokens in one account write."""
+    from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, normalize_tokens
+
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None:
+            return False
+        extra = _account_extra(row)
+        lifecycle = normalize_tokens(tokens, previous=extra.get(TOKEN_STORAGE_KEY), source="registration")
+        extra[TOKEN_STORAGE_KEY] = lifecycle
+        if lifecycle.get("access_token"):
+            row["access_token"] = lifecycle["access_token"]
+        if lifecycle.get("expires_at"):
+            row["expires_at"] = lifecycle["expires_at"]
+        row["extra_json"] = json.dumps(extra, ensure_ascii=False)
+        row["updated_at"] = _now()
+        _save_accounts(accounts)
+        return True
+
+
+def apply_chatgpt_oauth_refresh_success(
+    account_id: int,
+    expected_refresh_token: str,
+    response: dict,
+) -> bool:
+    """Atomically update the access token and a rotated ChatGPT refresh token."""
+    from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, merge_refresh_response, normalize_tokens
+
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None:
+            return False
+        extra = _account_extra(row)
+        current = normalize_tokens(extra.get(TOKEN_STORAGE_KEY), previous=extra.get(TOKEN_STORAGE_KEY))
+        if str(current.get("refresh_token") or "") != str(expected_refresh_token or ""):
+            return False
+        lifecycle = merge_refresh_response(current, response)
+        if not lifecycle.get("access_token"):
+            return False
+        extra[TOKEN_STORAGE_KEY] = lifecycle
+        row["access_token"] = lifecycle["access_token"]
+        if lifecycle.get("expires_at"):
+            row["expires_at"] = lifecycle["expires_at"]
+        row["extra_json"] = json.dumps(extra, ensure_ascii=False)
+        row["updated_at"] = _now()
+        _save_accounts(accounts)
+        return True
+
+
+def record_chatgpt_oauth_refresh_failure(
+    account_id: int,
+    expected_refresh_token: str,
+    error: str,
+) -> bool:
+    """Persist a redacted refresh failure while retaining the prior tokens."""
+    from core.chatgpt_token_lifecycle import TOKEN_STORAGE_KEY, mark_refresh_failure, normalize_tokens
+
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(account_id)), None)
+        if row is None:
+            return False
+        extra = _account_extra(row)
+        current = normalize_tokens(extra.get(TOKEN_STORAGE_KEY), previous=extra.get(TOKEN_STORAGE_KEY))
+        if str(current.get("refresh_token") or "") != str(expected_refresh_token or ""):
+            return False
+        extra[TOKEN_STORAGE_KEY] = mark_refresh_failure(current, error)
+        row["extra_json"] = json.dumps(extra, ensure_ascii=False)
         row["updated_at"] = _now()
         _save_accounts(accounts)
         return True
