@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, make_response, render_template, request
 
-from core import codex_retry_service, db, plan_check_service, extract_link_service, codex_agent_service
+from core import codex_retry_service, db, plan_check_service, extract_link_service, codex_agent_service, live_check_service
 from webui.auth import init_auth, register_auth_routes
 from core import registration_service as svc
 from webui import config_editor
@@ -111,6 +111,9 @@ def _compact_account_for_list(row: dict) -> dict:
         "plan_check_error", "plan_expires_at", "plan_renews_at", "renews_at",
         "billing_period", "billing_currency", "discount_amount", "discount_type",
         "discount_expires_at", "discount_promo_campaign_id",
+        "token_expired", "token_expires_at",
+        # 查活状态。
+        "live_check_status", "live_check_error", "live_checked_at",
         # 提链成功/失败时才需要。
         "extract_link_status", "extract_link_type", "extract_link_message", "extract_link_error",
         "extract_link_long_url", "extract_link_copy_paste", "extract_link_image_url_png",
@@ -221,6 +224,9 @@ def create_app(auth_code: str | None = None) -> Flask:
     recovered_extract_links = db.recover_interrupted_extract_links()
     if recovered_extract_links:
         logger.warning("已恢复 %s 个因 WebUI 重启中断的提链状态", recovered_extract_links)
+    recovered_live_checks = db.recover_interrupted_live_checks()
+    if recovered_live_checks:
+        logger.warning("已恢复 %s 个因 WebUI 重启中断的查活状态", recovered_live_checks)
     recovered_codex_agents = db.recover_interrupted_codex_agents()
     if recovered_codex_agents:
         logger.warning("已恢复 %s 个因 WebUI 重启中断的 Codex Agent Token 状态", recovered_codex_agents)
@@ -288,6 +294,8 @@ def create_app(auth_code: str | None = None) -> Flask:
         archived = str(request.args.get("archived", default="0") or "0").lower()
         plan_filter = str(request.args.get("plan", default="") or "").lower()
         q = str(request.args.get("q", default="") or "").strip()
+        date_from = str(request.args.get("date_from", default="") or "").strip() or None
+        date_to = str(request.args.get("date_to", default="") or "").strip() or None
         # 新分页接口：传 page/page_size 或 paged=1 时返回 {items,total,page,page_size,...}
         paged = str(request.args.get("paged", default="") or "").lower() in {"1", "true", "yes"}
         page_arg = request.args.get("page", default=None, type=int)
@@ -296,13 +304,20 @@ def create_app(auth_code: str | None = None) -> Flask:
             page = max(1, int(page_arg or 1))
             page_size = max(1, min(500, int(page_size_arg or limit or 50)))
             offset = (page - 1) * page_size
-            result = db.list_accounts_page(limit=page_size, offset=offset, archived=archived, plan_filter=plan_filter, q=q)
+            result = db.list_accounts_page(limit=page_size, offset=offset, archived=archived, plan_filter=plan_filter, q=q, date_from=date_from, date_to=date_to)
             result["items"] = [_compact_account_for_list(r) for r in (result.get("items") or [])]
             result.update({"ok": True, "page": page, "page_size": page_size, "compact": True})
             return jsonify(result)
         return jsonify([
             _compact_account_for_list(row)
-            for row in db.list_accounts(limit=limit, archived=archived, plan_filter=plan_filter, q=q)
+            for row in db.list_accounts(
+                limit=limit,
+                archived=archived,
+                plan_filter=plan_filter,
+                q=q,
+                date_from=date_from,
+                date_to=date_to,
+            )
         ])
 
     @app.get("/api/accounts/plan-check-status")
@@ -561,6 +576,77 @@ def create_app(auth_code: str | None = None) -> Flask:
             "skipped": skipped,
             "skipped_count": len(skipped),
         })
+
+    @app.post("/api/accounts/check-live-bulk")
+    def api_accounts_check_live_bulk():
+        """批量查活：加入后台队列；协议 BrowserSession 指纹环境重新登录并刷新最新 AT。"""
+        data = request.get_json(silent=True) or {}
+        ids = data.get("account_ids") or data.get("ids") or []
+        if not isinstance(ids, list) or not ids:
+            return jsonify({"ok": False, "error": "account_ids 必须是非空数组"}), 400
+        if len(ids) > 500:
+            return jsonify({"ok": False, "error": "单次最多查活 500 个账号"}), 400
+
+        account_ids: list[int] = []
+        skipped: list[dict] = []
+        seen = set()
+        for raw in ids:
+            try:
+                acc_id = int(raw)
+            except (TypeError, ValueError):
+                skipped.append({"id": raw, "reason": "ID 非法"})
+                continue
+            if acc_id in seen:
+                continue
+            seen.add(acc_id)
+            account_ids.append(acc_id)
+
+        accounts = []
+        for acc_id in account_ids:
+            acc = db.get_account(acc_id)
+            if not acc:
+                skipped.append({"id": acc_id, "reason": "账号不存在"})
+                continue
+            email = str(acc.get("email") or "").strip()
+            if not email:
+                skipped.append({"id": acc_id, "reason": "邮箱为空"})
+                continue
+            accounts.append(acc)
+
+        started = []
+        busy_count = 0
+        failed = []
+        for acc in accounts:
+            acc_id = int(acc.get("id") or 0)
+            email = str(acc.get("email") or "")
+            queued = live_check_service.enqueue_account_live_check(
+                account_id=acc_id,
+                email=email,
+                trigger="manual",
+                # 查活按“查套餐”同一套网络选路：
+                # PLAN_CHECK_PROXY_MODE / PLAN_CHECK_PROXY / PROXY_POOL。
+                # 不复用账号注册时的 proxy_used，避免旧注册出口被 CF 403 后一直失败。
+                proxy=None,
+            )
+            if queued.get("accepted"):
+                started.append({"id": acc_id, "email": email, "status": "queued"})
+            elif queued.get("busy"):
+                busy_count += 1
+                skipped.append({"id": acc_id, "email": email, "reason": queued.get("error") or "正在查活"})
+            else:
+                failed.append({"id": acc_id, "email": email, "error": queued.get("error") or "入队失败"})
+
+        return jsonify({
+            "ok": True,
+            "message": f"已入队 {len(started)} 个查活任务",
+            "started": started,
+            "started_count": len(started),
+            "busy_count": busy_count,
+            "failed": failed,
+            "failed_count": len(failed),
+            "skipped": skipped,
+            "queue": live_check_service.queue_settings(),
+        }), 202
 
 
     @app.post("/api/accounts/check-plan")
@@ -1535,7 +1621,11 @@ def create_app(auth_code: str | None = None) -> Flask:
     # ----------------------------------------------------------
     @app.get("/api/codex")
     def api_codex_list():
-        rows = db.list_codex_accounts()
+        rows = db.list_codex_accounts(
+            archived=str(request.args.get("archived", default="0") or "0").lower(),
+            date_from=str(request.args.get("date_from", default="") or "").strip() or None,
+            date_to=str(request.args.get("date_to", default="") or "").strip() or None,
+        )
         q = str(request.args.get("q", default="") or "").strip()
         if q:
             rows = [r for r in rows if _matches_query(r, q)]
@@ -1554,6 +1644,53 @@ def create_app(auth_code: str | None = None) -> Flask:
             "summary": db.codex_accounts_summary(),
             "accounts": rows[:limit],
         })
+
+    @app.post("/api/codex/archive")
+    def api_codex_archive():
+        """归档/取消归档一条 Codex 授权凭证。Body {filename, archived}。"""
+        data = request.get_json(silent=True) or {}
+        filename = str(data.get("filename") or "").strip()
+        archived = bool(data.get("archived", True))
+        if not filename:
+            return jsonify({"ok": False, "error": "filename 必填"}), 400
+        try:
+            rec = db.archive_codex(filename=filename, archived=archived)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if rec is None:
+            return jsonify({"ok": False, "error": f"凭证不存在: {filename}"}), 404
+        return jsonify({"ok": True, "filename": filename, "archived": archived, "record": rec})
+
+    @app.post("/api/codex/archive-bulk")
+    def api_codex_archive_bulk():
+        """批量归档/取消归档 Codex 授权凭证。Body {filenames:[...], archived}。"""
+        data = request.get_json(silent=True) or {}
+        filenames = data.get("filenames") or []
+        archived = bool(data.get("archived", True))
+        if not isinstance(filenames, list) or not filenames:
+            return jsonify({"ok": False, "error": "filenames 必须是非空数组"}), 400
+        if len(filenames) > 1000:
+            return jsonify({"ok": False, "error": "单次最多 1000 个"}), 400
+        updated = []
+        skipped = []
+        seen = set()
+        for fname in filenames:
+            if not isinstance(fname, str) or not fname:
+                skipped.append({"filename": str(fname), "reason": "非法文件名"})
+                continue
+            if fname in seen:
+                continue
+            seen.add(fname)
+            try:
+                rec = db.archive_codex(filename=fname, archived=archived)
+            except ValueError as exc:
+                skipped.append({"filename": fname, "reason": str(exc)})
+                continue
+            if rec is None:
+                skipped.append({"filename": fname, "reason": "凭证不存在"})
+            else:
+                updated.append({"filename": fname, "archived": archived})
+        return jsonify({"ok": True, "updated": updated, "updated_count": len(updated), "archived": archived, "skipped": skipped})
 
     @app.get("/api/codex/download/<path:filename>")
     def api_codex_download(filename: str):
@@ -2011,6 +2148,28 @@ def create_app(auth_code: str | None = None) -> Flask:
             "ok": True,
             "log": content,
             "running": codex_retry_service.is_retrying(email),
+        })
+
+    @app.get("/api/accounts/live-check-log")
+    def api_account_live_check_log():
+        """读取某邮箱最近一次查活日志。?email=xxx"""
+        from core import account_liveness
+        email = (request.args.get("email") or "").strip()
+        if not email:
+            return jsonify({"ok": False, "error": "email 为空"}), 400
+        p = account_liveness.log_path(email)
+        if not p.exists():
+            return jsonify({"ok": True, "log": "", "running": live_check_service.is_checking(email)})
+        max_bytes = 80_000
+        size = p.stat().st_size
+        with p.open("rb") as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+            content = f.read().decode("utf-8", errors="replace")
+        return jsonify({
+            "ok": True,
+            "log": content,
+            "running": live_check_service.is_checking(email),
         })
 
     # ----------------------------------------------------------
