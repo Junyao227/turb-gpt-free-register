@@ -2130,7 +2130,7 @@ def run_roxy_registration(email: str, name: str, birthday: str, proxy: str = Non
             access_token=access_token,
             totp_secret=totp_secret,
             email_source=resolve_email_source(email),
-            proxy_used=proxy or None,
+            proxy_used=proxy or opened.proxy_used or None,
             batch_dir=batch_dir,
             extra={
                 "user": session_info.get("user"),

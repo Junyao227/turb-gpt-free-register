@@ -182,6 +182,7 @@ def run_registration(
     #   cloak        = CloakBrowser + Playwright/Selenium 适配层
     #   browser_use  = Browser Use Cloud stealth Chromium + Playwright
     #   skyvern      = Skyvern Browser Sessions + Playwright
+    #   ant_browser  = Ant Browser local profile + Selenium CDP
     driver_mode = str(getattr(_roxy_cfg, "REGISTRATION_DRIVER", "protocol") or "protocol").strip().lower()
     if driver_mode in ("roxy", "roxybrowser", "fingerprint", "browser"):
         from core.roxy_registration import run_roxy_registration
@@ -223,9 +224,19 @@ def run_registration(
             otp_code=otp_code,
             batch_dir=batch_dir,
         )
+    if driver_mode in ("ant_browser", "ant-browser", "antbrowser", "ant"):
+        from core.ant_browser_registration import run_ant_browser_registration
+        return run_ant_browser_registration(
+            email=email,
+            name=name,
+            birthday=birthday or generate_random_birthday(),
+            proxy=proxy,
+            otp_code=otp_code,
+            batch_dir=batch_dir,
+        )
     if driver_mode not in ("protocol", "api", "http"):
         raise RuntimeError(
-            f"不支持的 REGISTRATION_DRIVER={driver_mode!r}，可选 protocol / roxy / cloak / browser_use / skyvern"
+            f"不支持的 REGISTRATION_DRIVER={driver_mode!r}，可选 protocol / roxy / cloak / browser_use / skyvern / ant_browser"
         )
 
     # 创建浏览器会话（proxy=None 时自动从 config.PROXY_POOL 随机抽一个）

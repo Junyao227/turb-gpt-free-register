@@ -12,7 +12,7 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 
 from config import roxybrowser as _cfg
-from config.proxy import normalize_proxy_url
+from config.proxy import mask_proxy_url, normalize_proxy_url
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class RoxyOpenResult:
     webdriver_url: str | None = None
     ws_endpoint: str | None = None
     created_by_run: bool = False
+    proxy_used: str | None = None
 
 
 def _strip_slashes(value: str) -> str:
@@ -36,16 +37,7 @@ def _join_url(base: str, path: str) -> str:
 
 
 def _mask_proxy(proxy_url: str) -> str:
-    try:
-        normalized = normalize_proxy_url(proxy_url)
-    except ValueError:
-        return "***"
-    parsed = urlparse(normalized)
-    if parsed.username or parsed.password:
-        host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
-        return f"{parsed.scheme}://***:***@{host}{port}"
-    return str(proxy_url or "").strip()
+    return mask_proxy_url(proxy_url)
 
 
 def _proxy_url_to_roxy_info(proxy_url: str) -> dict:
@@ -153,6 +145,7 @@ class RoxyBrowserClient:
         self.api_base = (api_base or _cfg.ROXY_API_BASE).strip()
         self.token = (token if token is not None else _cfg.ROXY_API_TOKEN).strip()
         self.http = requests.Session()
+        self._last_created_proxy_url: str | None = None
         if self.token:
             # 官方文档要求所有接口请求头必须加 token。这里同时兼容 token / Authorization。
             self.http.headers.update({
@@ -380,6 +373,7 @@ class RoxyBrowserClient:
         return {"ok": False, "items": [], "errors": errors}
 
     def create_profile(self, payload: dict | None = None) -> str:
+        self._last_created_proxy_url = None
         body = dict(getattr(_cfg, "ROXY_PROFILE_CREATE_PAYLOAD", {}) or {})
         random_name_enabled = bool(getattr(_cfg, "ROXY_RANDOM_PROFILE_NAME_ON_CREATE", True))
         if random_name_enabled:
@@ -413,6 +407,7 @@ class RoxyBrowserClient:
             if proxy_url:
                 proxy_info = _proxy_url_to_roxy_info(proxy_url)
                 body["proxyInfo"] = proxy_info
+                self._last_created_proxy_url = proxy_url
                 logger.info(
                     "[Roxy] 创建环境启用代理池：proxy=%s type=%s host=%s port=%s",
                     _mask_proxy(proxy_url),
@@ -468,9 +463,11 @@ class RoxyBrowserClient:
 
         pid = configured_pid
         created_by_run = False
+        proxy_used = None
         if not pid:
             pid = self.create_profile()
             created_by_run = True
+            proxy_used = self._last_created_proxy_url
             logger.info("[Roxy] 已创建临时环境：%s", pid)
 
         path = str(_cfg.ROXY_OPEN_PATH).format(profile_id=pid)
@@ -511,6 +508,7 @@ class RoxyBrowserClient:
             webdriver_url=webdriver_url,
             ws_endpoint=ws_endpoint,
             created_by_run=created_by_run,
+            proxy_used=proxy_used,
         )
 
     def close_profile(self, profile_id: str) -> None:
