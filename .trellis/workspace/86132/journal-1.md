@@ -71,3 +71,36 @@ Integrated GCash and standard PayPal into the maintained Paylink facade, added d
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Add GrabPay provider
+
+**Date**: 2026-08-09
+**Task**: Add GrabPay provider
+**Branch**: `main`
+
+### Summary
+
+Exposed GrabPay through the Paylink facade with Philippines-specific proxy isolation, registry navigation, masked configuration, and fixture coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ab5afb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
