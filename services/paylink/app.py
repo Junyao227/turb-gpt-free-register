@@ -2269,6 +2269,22 @@ def checkout_challenge_detected(response: Any, body_text: str) -> bool:
     return any(marker in normalized for marker in CHECKOUT_CHALLENGE_MARKERS)
 
 
+def checkout_error_response_summary(response: Any, body_text: str) -> str:
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    content_type = str(response.headers.get("Content-Type") or "").lower()
+    text = redact_text(body_text).strip()
+    is_html = "text/html" in content_type or text.lower().startswith(("<html", "<!doctype html"))
+    if is_html:
+        return f"HTTP {status_code} HTML response"
+    if not text:
+        return f"HTTP {status_code} empty response"
+    try:
+        summary = event_field_text(redact_value(json.loads(text)), limit=240)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        summary = event_field_text(text, limit=240)
+    return f"HTTP {status_code} {summary}"
+
+
 def checkout_payment_method_tokens(data: dict[str, Any]) -> list[str]:
     tokens: list[str] = []
     seen: set[str] = set()
@@ -2317,8 +2333,9 @@ def ensure_checkout_supports_requested_wallet(data: dict[str, Any], req: LongLin
 def parse_checkout_response(response: Any, req: LongLinkRequest) -> dict[str, Any]:
     body_text = response.text[:500] if response.text else ""
     if response.status_code >= 400:
+        error_summary = checkout_error_response_summary(response, body_text)
         if checkout_challenge_detected(response, body_text):
-            raise HTTPException(status_code=503, detail=f"checkout challenge blocked: {body_text}")
+            raise HTTPException(status_code=503, detail=f"checkout challenge blocked: {error_summary}")
         if "cannot combine currencies" in body_text.lower():
             raise HTTPException(
                 status_code=409,
@@ -2330,7 +2347,7 @@ def parse_checkout_response(response: Any, req: LongLinkRequest) -> dict[str, An
             )
         raise HTTPException(
             status_code=response.status_code,
-            detail=f"checkout create failed: {body_text}",
+            detail=f"checkout create failed: {error_summary}",
         )
 
     data = response.json() or {}

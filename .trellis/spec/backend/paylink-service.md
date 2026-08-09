@@ -52,6 +52,10 @@ endpoint.
   registry order and is the only provider catalog consumed by the console.
 - Secrets and proxy credentials come from `services/paylink/.env`; they are
   redacted before logs and progress snapshots are persisted.
+- Checkout HTTP errors are stored only as compact summaries: HTML bodies record
+  the HTTP status and `HTML response`, while JSON bodies are redacted and
+  bounded. Raw provider response bodies must not enter exceptions, task
+  snapshots, events, or logs.
 - Checkout and provider stages use region-scoped proxy pools. The first-release
   route is PIX `BR -> VN -> BR`, UPI `IN`, Kakao Pay `KR`, and iDEAL `NL`.
   Pool values are comma- or semicolon-separated URLs and must remain only in

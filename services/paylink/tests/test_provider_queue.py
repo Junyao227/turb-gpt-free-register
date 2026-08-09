@@ -560,6 +560,39 @@ def test_payment_page_terminal_failure_includes_nested_error_code():
     assert reason == "state=failed code=checkout_upcoming_invoice_mismatch"
 
 
+def test_checkout_challenge_error_uses_compact_summary():
+    response = SimpleNamespace(
+        status_code=403,
+        headers={"Content-Type": "text/html", "cf-mitigated": "challenge"},
+        text="<html><body>Bearer challenge-token " + ("x" * 1200) + "</body></html>",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        app.parse_checkout_response(response, app.LongLinkRequest(link_type="pix"))
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "checkout challenge blocked: HTTP 403 HTML response"
+    assert "<html" not in str(exc.value.detail).lower()
+    assert "challenge-token" not in str(exc.value.detail)
+
+
+def test_checkout_error_summary_redacts_and_bounds_json_body():
+    response = SimpleNamespace(
+        status_code=400,
+        headers={"Content-Type": "application/json"},
+        text=json.dumps({"access_token": "private-token", "message": "invalid checkout"}),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        app.parse_checkout_response(response, app.LongLinkRequest(link_type="pix"))
+
+    detail = str(exc.value.detail)
+    assert exc.value.status_code == 400
+    assert detail.startswith("checkout create failed: HTTP 400")
+    assert "private-token" not in detail
+    assert '"access_token": "***"' in detail
+
+
 def test_upi_payment_page_stops_immediately_on_terminal_failure(monkeypatch):
     class Response:
         status_code = 200
