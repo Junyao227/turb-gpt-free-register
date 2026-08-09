@@ -104,3 +104,36 @@ Exposed GrabPay through the Paylink facade with Philippines-specific proxy isola
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: PayPal regional paylink profiles
+
+**Date**: 2026-08-09
+**Task**: PayPal regional paylink profiles
+**Branch**: `main`
+
+### Summary
+
+Added explicit US, Thailand, and Brazil PayPal Checkout profiles with regional proxy settings, a settings-page selector, atomic provider configuration updates, and fixture-only coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d7c4fa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
