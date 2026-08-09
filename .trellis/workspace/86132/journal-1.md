@@ -38,3 +38,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: GCash and PayPal Paylink providers
+
+**Date**: 2026-08-09
+**Task**: GCash and PayPal Paylink providers
+**Branch**: `main`
+
+### Summary
+
+Integrated GCash and standard PayPal into the maintained Paylink facade, added dedicated provider proxy configuration and console navigation, and verified Paylink plus root extract-link tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9f2cad6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
