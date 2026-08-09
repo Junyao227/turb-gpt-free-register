@@ -23,6 +23,9 @@ class _Response:
 
 
 class ExtractLinkServiceTests(unittest.TestCase):
+    def test_grabpay_link_type_is_accepted(self):
+        self.assertEqual(service._link_type("grabpay"), "grabpay")
+
     def test_gopay_link_type_is_accepted(self):
         self.assertEqual(service._link_type("gopay"), "gopay")
 

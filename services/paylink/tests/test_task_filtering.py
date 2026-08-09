@@ -40,6 +40,7 @@ def test_task_snapshots_filter_by_provider_and_keep_failed_tasks(monkeypatch, tm
     app.set_progress("twint-job", percent=100, text="done", done=True, link_type="swiss")
     app.set_progress("gcash-job", percent=100, text="done", done=True, link_type="gcash")
     app.set_progress("gopay-job", percent=100, text="done", done=True, link_type="gopay")
+    app.set_progress("grabpay-job", percent=100, text="done", done=True, link_type="grabpay")
     app.set_progress("paypal-job", percent=100, text="done", done=True, link_type="paypal")
 
     upi = app.list_task_snapshots(request_for("/api/tasks"), provider="upi")
@@ -48,6 +49,7 @@ def test_task_snapshots_filter_by_provider_and_keep_failed_tasks(monkeypatch, tm
     twint = app.list_task_snapshots(request_for("/api/tasks"), provider="twint")
     gcash = app.list_task_snapshots(request_for("/api/tasks"), provider="gcash")
     gopay = app.list_task_snapshots(request_for("/api/tasks"), provider="gopay")
+    grabpay = app.list_task_snapshots(request_for("/api/tasks"), provider="grabpay")
     paypal = app.list_task_snapshots(request_for("/api/tasks"), provider="paypal")
 
     assert [item["job_id"] for item in upi["items"]] == ["upi-failed"]
@@ -60,4 +62,6 @@ def test_task_snapshots_filter_by_provider_and_keep_failed_tasks(monkeypatch, tm
     assert [item["job_id"] for item in gcash["items"]] == ["gcash-job"]
     assert [item["job_id"] for item in gopay["items"]] == ["gopay-job"]
     assert gopay["items"][0]["link_type"] == "gopay"
+    assert [item["job_id"] for item in grabpay["items"]] == ["grabpay-job"]
+    assert grabpay["items"][0]["link_type"] == "grabpay"
     assert [item["job_id"] for item in paypal["items"]] == ["paypal-job"]

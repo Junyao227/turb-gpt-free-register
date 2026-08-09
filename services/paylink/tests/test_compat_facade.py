@@ -45,6 +45,7 @@ def _event_data(value: str) -> dict:
         ("ideal", "ideal", "NL", "nl"),
         ("gcash", "gcash", "PH", "en-PH"),
         ("gopay", "gopay", "ID", "id"),
+        ("grabpay", "grabpay", "PH", "en"),
         ("paypal", "paypal", "US", "en"),
     ],
 )
@@ -59,9 +60,9 @@ def test_registry_resolves_first_release_providers(public_type, native_type, cou
 def test_enabled_provider_metadata_exposes_console_routes():
     providers = enabled_provider_metadata()
 
-    assert [item["public_type"] for item in providers] == ["pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"]
-    assert [item["display_name"] for item in providers] == ["PIX", "UPI", "Kakao Pay", "Twint", "iDEAL", "GCash", "GoPay", "PayPal"]
-    assert [item["queue_path"] for item in providers] == ["/qr", "/in-qr", "/kr-qr", "/ch-qr", "/nl-qr", "/ph-qr", "/?provider=gopay&view=tasks", "/?provider=paypal&view=tasks"]
+    assert [item["public_type"] for item in providers] == ["pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "grabpay", "paypal"]
+    assert [item["display_name"] for item in providers] == ["PIX", "UPI", "Kakao Pay", "Twint", "iDEAL", "GCash", "GoPay", "GrabPay", "PayPal"]
+    assert [item["queue_path"] for item in providers] == ["/qr", "/in-qr", "/kr-qr", "/ch-qr", "/nl-qr", "/ph-qr", "/?provider=gopay&view=tasks", "/?provider=grabpay&view=tasks", "/?provider=paypal&view=tasks"]
     assert providers[2]["native_type"] == "korea"
 
 
@@ -97,6 +98,10 @@ locale = en-PH
 enabled = true
 country = ID
 locale = id
+[providers.grabpay]
+enabled = true
+country = PH
+locale = en
 [providers.paypal]
 enabled = true
 country = US
@@ -107,7 +112,7 @@ locale = en
 
     providers = enabled_provider_metadata(config_path)
 
-    assert [item["public_type"] for item in providers] == ["pix", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"]
+    assert [item["public_type"] for item in providers] == ["pix", "kakao_pay", "twint", "ideal", "gcash", "gopay", "grabpay", "paypal"]
 
 
 def test_disabled_provider_is_rejected_before_job_creation(tmp_path):
@@ -152,6 +157,17 @@ def test_disabled_gopay_provider_is_rejected_before_job_creation(tmp_path):
 
     with pytest.raises(ProviderConfigError, match="disabled"):
         resolve_provider("gopay", config_path)
+
+
+def test_disabled_grabpay_provider_is_rejected_before_job_creation(tmp_path):
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        "[providers.grabpay]\nenabled = false\ncountry = PH\nlocale = en\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProviderConfigError, match="disabled"):
+        resolve_provider("grabpay", config_path)
 
 
 def test_unknown_provider_is_rejected():
@@ -319,6 +335,41 @@ def test_facade_gopay_job_uses_native_id_approval_request_and_persists_result():
     assert result["long_url"] == "https://payments.example.test/gopay"
     assert result["payment_link_type"] == "gopay"
     assert result["payment_method"] == "gopay"
+
+
+def test_facade_grabpay_job_uses_native_ph_approval_request_and_persists_result():
+    store = ProgressStore()
+    captured_requests = []
+
+    def request_factory(**kwargs):
+        captured_requests.append(dict(kwargs))
+        return kwargs
+
+    facade = CompatibilityFacade(
+        request_factory=request_factory,
+        generate_core=lambda _request: {
+            "long_url": "https://payments.example.test/grabpay",
+            "provider_redirect_url": "https://payments.example.test/grabpay",
+            "payment_method_type": "grabpay",
+            "approval_result": "approved",
+            "submission_state": "requires_approval",
+        },
+        set_progress=store.set_progress,
+        get_progress=store.get_progress,
+        log_event=lambda *_args, **_kwargs: None,
+    )
+
+    job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="grabpay"))
+    events = list(facade.iter_events(job_id))
+
+    assert captured_requests[0]["link_type"] == "grabpay"
+    assert captured_requests[0]["billing_country"] == "PH"
+    assert captured_requests[0]["payment_locale"] == "en"
+    assert store.snapshots[job_id]["link_type"] == "grabpay"
+    result = _event_data(events[-2])["result"]
+    assert result["long_url"] == "https://payments.example.test/grabpay"
+    assert result["payment_link_type"] == "grabpay"
+    assert result["payment_method"] == "grabpay"
 
 
 def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result():

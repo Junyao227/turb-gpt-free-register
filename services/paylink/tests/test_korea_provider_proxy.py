@@ -228,3 +228,45 @@ def test_gcash_checkout_and_provider_stages_prefer_dedicated_ph_pool(monkeypatch
     assert all("region-JP" not in candidate for candidate in checkout_candidates)
     assert "region-PH" in proxy
     assert "region-JP" not in proxy
+
+
+def test_grabpay_dedicated_fallback_precedes_gopay_and_generic_pools(monkeypatch):
+    grabpay_proxy = "http://fixture-grabpay-region-PH-sid-demo-t-5:fixture-pass@grabpay-proxy.example.test:443"
+    generic_proxy = "http://fixture-generic-region-JP-sid-demo-t-5:fixture-pass@generic-proxy.example.test:443"
+    gopay_proxy = "http://fixture-gopay-region-JP-sid-demo-t-5:fixture-pass@gopay-proxy.example.test:443"
+    monkeypatch.setattr(app, "GRABPAY_PROXY_POOL", [])
+    monkeypatch.setattr(app, "GRABPAY_STAGE_PROXY", grabpay_proxy)
+    monkeypatch.setattr(app, "GOPAY_PROVIDER_PROXY_POOL", [gopay_proxy])
+    monkeypatch.setattr(app, "GOPAY_PROVIDER_STAGE_PROXY", gopay_proxy)
+    monkeypatch.setattr(app, "DEFAULT_PROXY_POOL", [generic_proxy])
+    monkeypatch.setattr(app, "PROVIDER_PROXY_POOL", [generic_proxy])
+    monkeypatch.setattr(app, "DEFAULT_PROXY", generic_proxy)
+    monkeypatch.setattr(app, "PROVIDER_STAGE_PROXY", generic_proxy)
+    monkeypatch.setitem(app._proxy_cursor, "grabpay", 0)
+
+    checkout_candidates = app.proxy_candidates_for_link_type("", "grabpay")
+    proxy = app.provider_stage_proxy(app.LongLinkRequest(link_type="grabpay"))
+
+    assert checkout_candidates == [grabpay_proxy]
+    assert proxy == grabpay_proxy
+
+
+def test_grabpay_dedicated_pool_precedes_gopay_and_generic_pools(monkeypatch):
+    grabpay_proxy = "http://fixture-grabpay-region-PH-sid-demo-t-5:fixture-pass@grabpay-proxy.example.test:443"
+    generic_proxy = "http://fixture-generic-region-JP-sid-demo-t-5:fixture-pass@generic-proxy.example.test:443"
+    gopay_proxy = "http://fixture-gopay-region-JP-sid-demo-t-5:fixture-pass@gopay-proxy.example.test:443"
+    monkeypatch.setattr(app, "GRABPAY_PROXY_POOL", [grabpay_proxy])
+    monkeypatch.setattr(app, "GRABPAY_STAGE_PROXY", "")
+    monkeypatch.setattr(app, "GOPAY_PROVIDER_PROXY_POOL", [gopay_proxy])
+    monkeypatch.setattr(app, "GOPAY_PROVIDER_STAGE_PROXY", gopay_proxy)
+    monkeypatch.setattr(app, "DEFAULT_PROXY_POOL", [generic_proxy])
+    monkeypatch.setattr(app, "PROVIDER_PROXY_POOL", [generic_proxy])
+    monkeypatch.setattr(app, "DEFAULT_PROXY", generic_proxy)
+    monkeypatch.setattr(app, "PROVIDER_STAGE_PROXY", generic_proxy)
+    monkeypatch.setitem(app._proxy_cursor, "grabpay", 0)
+
+    checkout_candidates = app.proxy_candidates_for_link_type("", "grabpay")
+    proxy = app.provider_stage_proxy(app.LongLinkRequest(link_type="grabpay"))
+
+    assert checkout_candidates == [grabpay_proxy]
+    assert proxy == grabpay_proxy

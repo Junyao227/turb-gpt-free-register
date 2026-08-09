@@ -76,11 +76,28 @@ def test_proxy_config_view_maps_gopay_to_its_approval_settings(monkeypatch):
     assert "proxy.example.test" not in serialized
 
 
-def test_provider_proxy_runtime_mapping_covers_swiss_and_gopay_settings():
+def test_proxy_config_view_maps_grabpay_to_its_dedicated_settings(monkeypatch):
+    monkeypatch.setenv("OPENAI_PAY_GRABPAY_PROXY", FIXTURE_PROXY)
+    monkeypatch.setenv("OPENAI_PAY_GRABPAY_PROXY_POOL", FIXTURE_PROXY_TWO)
+
+    view = app.proxy_config_view("grabpay")
+    serialized = json.dumps(view)
+
+    assert view["native_type"] == "grabpay"
+    assert view["fallback"]["env_key"] == "OPENAI_PAY_GRABPAY_PROXY"
+    assert view["pool"]["env_key"] == "OPENAI_PAY_GRABPAY_PROXY_POOL"
+    assert view["pool"]["count"] == 1
+    assert "fixture-user" not in serialized
+    assert "proxy.example.test" not in serialized
+
+
+def test_provider_proxy_runtime_mapping_covers_swiss_gopay_and_grabpay_settings():
     assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_SWISS_PROXY"] == "SWISS_STAGE_PROXY"
     assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_SWISS_PROXY_POOL"] == "SWISS_PROXY_POOL"
     assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_GOPAY_PROVIDER_PROXY"] == "GOPAY_PROVIDER_STAGE_PROXY"
     assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL"] == "GOPAY_PROVIDER_PROXY_POOL"
+    assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_GRABPAY_PROXY"] == "GRABPAY_STAGE_PROXY"
+    assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_GRABPAY_PROXY_POOL"] == "GRABPAY_PROXY_POOL"
 
 
 def test_proxy_configuration_update_writes_atomically_and_updates_runtime(monkeypatch, tmp_path):
@@ -107,6 +124,33 @@ def test_proxy_configuration_update_writes_atomically_and_updates_runtime(monkey
     assert f'OPENAI_PAY_PH_PROXY_POOL="{FIXTURE_PROXY_TWO};{FIXTURE_PROXY}"' in content
     assert app.PH_STAGE_PROXY == FIXTURE_PROXY
     assert app.PH_PROXY_POOL == [FIXTURE_PROXY_TWO, FIXTURE_PROXY]
+    assert "fixture-user" not in json.dumps(result)
+
+
+def test_grabpay_proxy_configuration_updates_its_dedicated_runtime(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("UNRELATED_VALUE=keep\n", encoding="utf-8")
+    monkeypatch.setattr(app, "PAYLINK_ENV_PATH", env_path)
+    monkeypatch.setattr(app, "GRABPAY_STAGE_PROXY", "")
+    monkeypatch.setattr(app, "GRABPAY_PROXY_POOL", [])
+    monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENAI_PAY_GRABPAY_PROXY", "")
+    monkeypatch.setenv("OPENAI_PAY_GRABPAY_PROXY_POOL", "")
+
+    result = app.update_provider_proxy_config(
+        app.ProviderProxyUpdateRequest(
+            provider="grabpay",
+            fallbackProxy=FIXTURE_PROXY,
+            proxyPool=FIXTURE_PROXY_TWO,
+        )
+    )
+    content = env_path.read_text(encoding="utf-8")
+
+    assert "UNRELATED_VALUE=keep" in content
+    assert f'OPENAI_PAY_GRABPAY_PROXY="{FIXTURE_PROXY}"' in content
+    assert f'OPENAI_PAY_GRABPAY_PROXY_POOL="{FIXTURE_PROXY_TWO}"' in content
+    assert app.GRABPAY_STAGE_PROXY == FIXTURE_PROXY
+    assert app.GRABPAY_PROXY_POOL == [FIXTURE_PROXY_TWO]
     assert "fixture-user" not in json.dumps(result)
 
 

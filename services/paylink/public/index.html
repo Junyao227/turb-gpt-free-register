@@ -881,6 +881,7 @@
                       <option value="upi">印度线路（IN / INR）</option>
                       <option value="ideal">荷兰 iDEAL（NL / EUR）</option>
                       <option value="gcash">菲律宾 GCash（PH / PHP）</option>
+                      <option value="grabpay">菲律宾 GrabPay（PH / PHP）</option>
                       <option value="paypal">美国 PayPal（US / USD）</option>
                       <option value="gopay">印尼线路（ID / IDR）</option>
                     </select>
@@ -1219,6 +1220,17 @@
           promoEnabled: true,
           resultLabel: "GoPay Checkout 链接",
           statusText: "印度尼西亚 GoPay 提交结果已返回",
+        },
+        grabpay: {
+          title: "菲律宾 GrabPay 线路",
+          icon: "PH",
+          linkLabel: "GrabPay 提交结果（菲律宾 PHP）",
+          country: "PH",
+          currency: "PHP",
+          locale: "en-PH",
+          promoEnabled: true,
+          resultLabel: "GrabPay Checkout 链接",
+          statusText: "菲律宾 GrabPay 提交结果已返回",
         },
       };
 
@@ -1588,7 +1600,8 @@
       }
 
       function walletLineLabel(linkType) {
-        return String(linkType || "").trim() === "gcash" ? "GCash" : "GoPay";
+        const labels = { gcash: "GCash", gopay: "GoPay", grabpay: "GrabPay" };
+        return labels[String(linkType || "").trim()] || "钱包";
       }
 
       function resolveTaskResultLink(data) {
@@ -1614,7 +1627,7 @@
       }
 
       function resolveMainLinkLabel(data, line, providerReady) {
-        if (["gopay", "gcash"].includes(data.link_type)) return `${walletLineLabel(data.link_type)} 跳转链接`;
+        if (walletLineNeedsProviderLink(data.link_type)) return `${walletLineLabel(data.link_type)} 跳转链接`;
         if (providerReady) {
           if (data.link_type === "pix") return "PIX 支付页";
           return line.resultLabel;
@@ -1624,7 +1637,7 @@
       }
 
       function resolveOpenLinkText(data, providerReady) {
-        if (["gopay", "gcash"].includes(data.link_type)) return `${providerReady ? "打开" : "等待"} ${walletLineLabel(data.link_type)}`;
+        if (walletLineNeedsProviderLink(data.link_type)) return `${providerReady ? "打开" : "等待"} ${walletLineLabel(data.link_type)}`;
         if (providerReady && data.link_type === "upi") return "查看二维码";
         if (providerReady) return "打开支付页";
         const checkoutUrl = String(data.checkout_url || "").trim();
@@ -1634,7 +1647,7 @@
       }
 
       function resolveCopyLinkText(data, providerReady) {
-        if (["gopay", "gcash"].includes(data.link_type)) return providerReady ? `复制 ${walletLineLabel(data.link_type)}` : `等待 ${walletLineLabel(data.link_type)}`;
+        if (walletLineNeedsProviderLink(data.link_type)) return providerReady ? `复制 ${walletLineLabel(data.link_type)}` : `等待 ${walletLineLabel(data.link_type)}`;
         if (providerReady && data.link_type === "upi") return "复制二维码内容";
         if (providerReady) return "复制支付页";
         const checkoutUrl = String(data.checkout_url || "").trim();
@@ -1645,7 +1658,7 @@
 
       function resolveExtractStatus(data, line, failureCount, providerReady) {
         if (failureCount) return `部分成功，失败 ${failureCount} 个`;
-        if (["gopay", "gcash"].includes(data.link_type)) {
+        if (walletLineNeedsProviderLink(data.link_type)) {
           const walletLabel = walletLineLabel(data.link_type);
           const approvalResult = String(data.approval_result || "").trim() || "-";
           const submissionState = String(data.submission_state || "").trim() || "-";
@@ -1734,7 +1747,7 @@
         setRowValue("pixQueueRow", "pixQueueHint", queueMessage);
         $("result").classList.add("show");
         setLinkEnabled(Boolean(currentLongUrl));
-        const walletLinkType = ["gopay", "gcash"].includes(data.link_type);
+        const walletLinkType = walletLineNeedsProviderLink(data.link_type);
         const doneText = walletLinkType ? (providerReady ? `${walletLineLabel(data.link_type)} 跳转链接已返回` : `${walletLineLabel(data.link_type)} 未成功`) : "生成完成";
         setStatus(`${modeText}完成：成功 ${successCount} 个，失败 ${failureCount} 个。`);
         setProgress(100, doneText, Boolean(walletLinkType && !providerReady));

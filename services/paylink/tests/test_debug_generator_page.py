@@ -164,10 +164,13 @@ def test_home_and_debug_pages_accept_public_provider_query_values():
 
     assert '<option value="ideal">荷兰 iDEAL（NL / EUR）</option>' in home
     assert '<option value="gcash">菲律宾 GCash（PH / PHP）</option>' in home
+    assert '<option value="grabpay">菲律宾 GrabPay（PH / PHP）</option>' in home
     assert '<option value="paypal">美国 PayPal（US / USD）</option>' in home
     assert '<option value="swiss">Twint（CH / CHF）</option>' in home
     assert 'gcash: {' in home
+    assert 'grabpay: {' in home
     assert 'paypal: {' in home
+    assert 'grabpay: "GrabPay"' in home
     assert 'paypal:["US","en"]' in debug
     assert 'swiss: "twint"' in home
     assert 'swiss: "twint"' in debug
@@ -335,7 +338,7 @@ def test_provider_metadata_route_returns_enabled_registry_entries():
 
     assert response.status_code == 200
     assert payload["ok"] is True
-    assert [item["public_type"] for item in payload["providers"]] == ["pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"]
+    assert [item["public_type"] for item in payload["providers"]] == ["pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "grabpay", "paypal"]
 
 
 def test_debug_generate_page_requires_admin_auth(monkeypatch):

@@ -128,11 +128,13 @@ UPI_DEFAULT_POOL_KEEP = max(1, min(50, int(os.getenv("OPENAI_PAY_UPI_POOL_KEEP",
 UPI_DEFAULT_POOL_MAX = max(1, min(2000, int(os.getenv("OPENAI_PAY_UPI_POOL_MAX", "200") or 200)))
 UPI_SSE_PING_SECONDS = max(5, int(os.getenv("OPENAI_PAY_UPI_SSE_PING_SECONDS", "15") or 15))
 GOPAY_PROVIDER_STAGE_PROXY = os.getenv("OPENAI_PAY_GOPAY_PROVIDER_PROXY", "").strip()
+GRABPAY_STAGE_PROXY = os.getenv("OPENAI_PAY_GRABPAY_PROXY", "").strip()
 DEFAULT_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_DEFAULT_PROXY_POOL", "")
 PROVIDER_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_PROVIDER_PROXY_POOL", "")
 PIX_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_PIX_PROXY_POOL", "")
 PIX_PROMOTION_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_PIX_PROMOTION_PROXY_POOL", "")
 GOPAY_PROVIDER_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL", "")
+GRABPAY_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_GRABPAY_PROXY_POOL", "")
 KOREA_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_KOREA_PROXY_POOL", "")
 SWISS_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_SWISS_PROXY_POOL", "")
 INDIA_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_INDIA_PROXY_POOL", "")
@@ -150,6 +152,7 @@ PROVIDER_PROXY_ENV_KEYS: dict[str, tuple[str, str]] = {
     "ideal": ("OPENAI_PAY_IDEAL_PROXY", "OPENAI_PAY_IDEAL_PROXY_POOL"),
     "gcash": ("OPENAI_PAY_PH_PROXY", "OPENAI_PAY_PH_PROXY_POOL"),
     "gopay": ("OPENAI_PAY_GOPAY_PROVIDER_PROXY", "OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL"),
+    "grabpay": ("OPENAI_PAY_GRABPAY_PROXY", "OPENAI_PAY_GRABPAY_PROXY_POOL"),
     "paypal": ("OPENAI_PAY_PAYPAL_PROXY", "OPENAI_PAY_PAYPAL_PROXY_POOL"),
 }
 PROXY_ENV_RUNTIME_NAMES = {
@@ -163,6 +166,8 @@ PROXY_ENV_RUNTIME_NAMES = {
     "OPENAI_PAY_SWISS_PROXY_POOL": "SWISS_PROXY_POOL",
     "OPENAI_PAY_GOPAY_PROVIDER_PROXY": "GOPAY_PROVIDER_STAGE_PROXY",
     "OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL": "GOPAY_PROVIDER_PROXY_POOL",
+    "OPENAI_PAY_GRABPAY_PROXY": "GRABPAY_STAGE_PROXY",
+    "OPENAI_PAY_GRABPAY_PROXY_POOL": "GRABPAY_PROXY_POOL",
     "OPENAI_PAY_IDEAL_PROXY": "IDEAL_STAGE_PROXY",
     "OPENAI_PAY_IDEAL_PROXY_POOL": "IDEAL_PROXY_POOL",
     "OPENAI_PAY_PH_PROXY": "PH_STAGE_PROXY",
@@ -556,11 +561,18 @@ def rewrite_proxy_pool_region(pool: list[str], region: str) -> list[str]:
     return [proxy_for_region(item, region) for item in pool if str(item or "").strip()]
 
 
+def grabpay_proxy_source(generic_pool: list[str], generic_fallback: str) -> tuple[list[str], str]:
+    if GRABPAY_PROXY_POOL or GRABPAY_STAGE_PROXY:
+        return GRABPAY_PROXY_POOL, GRABPAY_STAGE_PROXY
+    return generic_pool, generic_fallback
+
+
 DEFAULT_PROXY_POOL = parse_proxy_pool(DEFAULT_PROXY_POOL_RAW)
 PROVIDER_PROXY_POOL = parse_proxy_pool(PROVIDER_PROXY_POOL_RAW)
 PIX_PROXY_POOL = parse_proxy_pool(PIX_PROXY_POOL_RAW)
 PIX_PROMOTION_PROXY_POOL = parse_proxy_pool(PIX_PROMOTION_PROXY_POOL_RAW)
 GOPAY_PROVIDER_PROXY_POOL = parse_proxy_pool(GOPAY_PROVIDER_PROXY_POOL_RAW)
+GRABPAY_PROXY_POOL = parse_proxy_pool(GRABPAY_PROXY_POOL_RAW)
 KOREA_PROXY_POOL = parse_proxy_pool(KOREA_PROXY_POOL_RAW)
 SWISS_PROXY_POOL = parse_proxy_pool(SWISS_PROXY_POOL_RAW)
 INDIA_PROXY_POOL = parse_proxy_pool(INDIA_PROXY_POOL_RAW)
@@ -575,6 +587,7 @@ _proxy_cursor: dict[str, int] = {
     "pix": 0,
     "pix_promotion": 0,
     "gopay": 0,
+    "grabpay": 0,
     "korea": 0,
     "swiss": 0,
     "upi": 0,
@@ -897,6 +910,7 @@ def app_stats_snapshot() -> dict[str, Any]:
         "default_proxy_pool_size": len(DEFAULT_PROXY_POOL) or (1 if DEFAULT_PROXY else 0),
         "provider_proxy_pool_size": len(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if PROVIDER_STAGE_PROXY or DEFAULT_PROXY else 0),
         "gopay_proxy_pool_size": len(GOPAY_PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if GOPAY_PROVIDER_STAGE_PROXY or DEFAULT_PROXY else 0),
+        "grabpay_proxy_pool_size": len(GRABPAY_PROXY_POOL) or (1 if GRABPAY_STAGE_PROXY else 0),
         "ph_proxy_pool_size": len(PH_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if PH_STAGE_PROXY or DEFAULT_PROXY else 0),
         "ideal_proxy_pool_size": len(IDEAL_PROXY_POOL or PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if IDEAL_STAGE_PROXY or PROVIDER_STAGE_PROXY or DEFAULT_PROXY else 0),
         "promo_enabled_default": True,
@@ -1515,6 +1529,12 @@ def effective_default_proxy(proxy: str = "", link_type: str = "") -> str:
             PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
             PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
         )
+    if normalized_link_type == "grabpay":
+        pool, fallback = grabpay_proxy_source(
+            rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
+            proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
+        return next_proxy("grabpay", pool, fallback)
     if normalized_link_type == "paypal":
         return next_proxy(
             "paypal",
@@ -1578,6 +1598,11 @@ def proxy_candidates_for_link_type(proxy: str = "", link_type: str = "") -> list
     elif normalized_link_type == "gcash":
         pool = PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH")
         fallback = PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH")
+    elif normalized_link_type == "grabpay":
+        pool, fallback = grabpay_proxy_source(
+            rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
+            proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
     elif normalized_link_type == "paypal":
         pool = PAYPAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "US")
         fallback = PAYPAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US")
@@ -1701,6 +1726,12 @@ def provider_stage_proxy(req: LongLinkRequest) -> str:
             PH_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
             PH_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
         )
+    if normalized_link_type == "grabpay":
+        pool, fallback = grabpay_proxy_source(
+            rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
+            PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
+        return next_proxy("grabpay", pool, fallback)
     wallet_config = wallet_approval_line_config(req.link_type)
     if wallet_config:
         return next_proxy(

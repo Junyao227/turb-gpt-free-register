@@ -13,7 +13,7 @@
 
 ```text
 POST /api/extract
-  request:  { "token": string, "link_type": "pix" | "upi" | "kakao_pay" | "twint" | "ideal" | "gcash" | "gopay" | "paypal" }
+  request:  { "token": string, "link_type": "pix" | "upi" | "kakao_pay" | "twint" | "ideal" | "gcash" | "gopay" | "grabpay" | "paypal" }
   response: { "ok": true, "job_id": string }
 
 GET /api/jobs/{job_id}/events
@@ -61,8 +61,8 @@ payment_page_terminal_failure(payload: object) -> string
 
 `kakao_pay` is mapped only by `paylink.provider_registry` to OPLL2's native
 `korea` provider; `twint` is mapped only by that registry to native `swiss`.
-`gopay` retains the same public and native type. The root client submits no
-query parameters to the event endpoint.
+`gopay` and `grabpay` retain the same public and native types. The root client
+submits no query parameters to the event endpoint.
 
 ### 3. Contracts
 
@@ -80,6 +80,11 @@ query parameters to the event endpoint.
   `OPENAI_PAY_GOPAY_PROVIDER_PROXY` and
   `OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL`. The maintained approval flow does
   not create a provider-pending record or use the historical `/id-qr` page.
+- GrabPay uses public/native `grabpay`, `PH` / `en`, and the shared Tasks route
+  `/?provider=grabpay&view=tasks`. Its masked settings are
+  `OPENAI_PAY_GRABPAY_PROXY` and `OPENAI_PAY_GRABPAY_PROXY_POOL`. The native
+  approval flow creates neither a provider-pending record nor a payment
+  confirmation operation.
 - Secrets and proxy credentials come from `services/paylink/.env`; they are
   redacted before logs and progress snapshots are persisted.
 - The administrator-only `/settings` page keeps the shared global shell and
@@ -104,7 +109,9 @@ query parameters to the event endpoint.
   `OPENAI_PAY_PH_PROXY_POOL` before generic fallbacks; it must not reuse the
   GoPay pool. GoPay uses its dedicated approval pool first and keeps its
   established JP provider-stage fallback; billing `ID` must not rewrite that
-  provider-stage fallback.
+  provider-stage fallback. GrabPay uses its dedicated PH pool and fallback
+  before any generic PH-rewritten candidate at both stages. It must not reuse
+  either GoPay proxy setting; GCash keeps its existing PH settings.
 - PayPal is a standard US Checkout-link Provider. It reads
   `OPENAI_PAY_PAYPAL_PROXY` and `OPENAI_PAY_PAYPAL_PROXY_POOL` before generic
   US Checkout candidates, verifies that the Checkout lists `paypal`, and
@@ -164,6 +171,7 @@ query parameters to the event endpoint.
 | Provider disabled | It is omitted from `GET /api/providers` and cannot appear as an active console tab. |
 | Twint queue page | The public page identity stays `twint`, while queue, delete, and clear requests use native `swiss`. |
 | GoPay queue request | `gopay` is rejected by provider-pending APIs; its public queue action returns the filtered Tasks view. |
+| GrabPay queue request | `grabpay` is rejected by provider-pending APIs; its public queue action returns the filtered Tasks view. |
 | Provider config missing or invalid | `GET /api/providers` returns HTTP 500 with the non-secret configuration diagnostic. |
 | Provider metadata request fails in the browser | Global navigation remains usable; the shell does not invent fallback provider tabs. |
 | `view=tasks` is absent or unknown | The home console renders the Generate view. |
@@ -191,6 +199,9 @@ query parameters to the event endpoint.
 - Good: `gopay` is enabled, creates ID/id native approval requests, returns a
   provider redirect only after approval, and directs operators to filtered
   Tasks instead of a provider queue.
+- Good: `grabpay` is enabled, creates PH/en native approval requests, uses its
+  dedicated PH proxy settings, and directs operators to filtered Tasks instead
+  of a provider queue.
 - Good: `paypal` is enabled, creates a US/en Checkout, returns a normalized
   PayPal Checkout URL, and its queue tab routes to `view=tasks`.
 - Good: GCash config shows `OPENAI_PAY_PH_PROXY_POOL` and a pool count without
@@ -223,10 +234,10 @@ query parameters to the event endpoint.
 
 ### 6. Tests Required
 
-- Registry tests assert all eight public names resolve, `kakao_pay` resolves
+- Registry tests assert all nine public names resolve, `kakao_pay` resolves
   to `korea`, `twint` resolves to `swiss` with `CH` / `de`, `gopay` resolves
-  to native `gopay` with `ID` / `id`, and `gcash` resolves to native `gcash`
-  with `PH` / `en-PH`.
+  to native `gopay` with `ID` / `id`, `grabpay` resolves to native `grabpay`
+  with `PH` / `en`, and `gcash` resolves to native `gcash` with `PH` / `en-PH`.
 - A disabled provider test asserts no job is started.
 - Facade lifecycle tests assert a single terminal result sequence and absence
   of the supplied access token from saved state and logs.
@@ -256,14 +267,18 @@ query parameters to the event endpoint.
   width, and console errors.
 - Proxy tests assert PIX uses BR/VN, UPI uses IN, Kakao Pay uses KR, Twint
   uses its existing dedicated CH Swiss pool, GoPay puts its dedicated approval
-  pool ahead of the maintained JP fallback, iDEAL uses NL, and GCash prefers
-  its dedicated PH pool without including live proxy hosts or credentials.
+  pool ahead of the maintained JP fallback, GrabPay's dedicated PH pool and
+  fallback both precede GoPay and generic candidates, iDEAL uses NL, and GCash
+  prefers its dedicated PH pool without including live proxy hosts or
+  credentials.
 - Twint queue-page tests assert public `data-provider-page="twint"` maps to
   native `swiss` before any queue API request and retains Twint labels.
 - PayPal tests assert registry country/locale, dedicated US proxy precedence,
   masked configuration, task filtering, and HTTP 409 when Checkout methods do
   not include `paypal`.
 - GoPay tests assert the masked dedicated proxy settings, ID/id facade request,
+  Tasks route, normalized redirect result, and provider-pending rejection.
+- GrabPay tests assert masked dedicated proxy settings, PH/en facade request,
   Tasks route, normalized redirect result, and provider-pending rejection.
 - Tests that patch one proxy selection path must explicitly clear every more
   specific pool used by that path. Module globals load `.env` at import time,
