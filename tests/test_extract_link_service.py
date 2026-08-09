@@ -23,6 +23,12 @@ class _Response:
 
 
 class ExtractLinkServiceTests(unittest.TestCase):
+    def test_gcash_link_type_is_accepted(self):
+        self.assertEqual(service._link_type("gcash"), "gcash")
+
+    def test_paypal_link_type_is_accepted(self):
+        self.assertEqual(service._link_type("paypal"), "paypal")
+
     def test_create_job_posts_only_token_and_link_type(self):
         captured = {}
 

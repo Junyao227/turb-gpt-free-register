@@ -11,6 +11,7 @@ import random
 import re
 import threading
 import time
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from korea_qr import build_korea_qr_bundle, render_qr_svg
+from paylink.provider_registry import PROVIDERS
 from paylink.redact import redact_text, redact_value
 from page_auth import (
     ADMIN_SCOPE,
@@ -101,6 +103,8 @@ CH_QR_PAGE = PUBLIC_DIR / "ch-qr.html"
 IN_QR_PAGE = PUBLIC_DIR / "in-qr.html"
 ID_QR_PAGE = PUBLIC_DIR / "id-qr.html"
 NL_QR_PAGE = PUBLIC_DIR / "nl-qr.html"
+PH_QR_PAGE = PUBLIC_DIR / "ph-qr.html"
+SETTINGS_PAGE = PUBLIC_DIR / "settings.html"
 ZC_DEFAULT_BASE_URL = os.getenv("OPLL_ZC_BASE_URL", "http://host.docker.internal:18001").strip()
 ZC_DEFAULT_PASSWORD = os.getenv("OPLL_ZC_PASSWORD", "").strip()
 ZC_DEFAULT_TOKEN = os.getenv("OPLL_ZC_TOKEN", "").strip()
@@ -113,6 +117,9 @@ PIX_PROMOTION_STAGE_PROXY = os.getenv("OPENAI_PAY_PIX_PROMOTION_PROXY", "").stri
 KOREA_STAGE_PROXY = os.getenv("OPENAI_PAY_KOREA_PROXY", "").strip()
 SWISS_STAGE_PROXY = os.getenv("OPENAI_PAY_SWISS_PROXY", "").strip()
 INDIA_STAGE_PROXY = os.getenv("OPENAI_PAY_INDIA_PROXY", "").strip()
+PH_STAGE_PROXY = os.getenv("OPENAI_PAY_PH_PROXY", "").strip()
+IDEAL_STAGE_PROXY = os.getenv("OPENAI_PAY_IDEAL_PROXY", "").strip()
+PAYPAL_STAGE_PROXY = os.getenv("OPENAI_PAY_PAYPAL_PROXY", "").strip()
 UPI_SERVICE_TOKEN = os.getenv("OPENAI_PAY_UPI_SERVICE_TOKEN", "").strip()
 UPI_BUSINESS_TOKEN = os.getenv("OPENAI_PAY_UPI_BUSINESS_TOKEN", "").strip()
 UPI_FEATURE_ENABLED = os.getenv("OPENAI_PAY_UPI_FEATURE_ENABLED", "1").strip().lower() not in {"0", "false", "off", "no"}
@@ -129,6 +136,34 @@ GOPAY_PROVIDER_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL"
 KOREA_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_KOREA_PROXY_POOL", "")
 SWISS_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_SWISS_PROXY_POOL", "")
 INDIA_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_INDIA_PROXY_POOL", "")
+PH_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_PH_PROXY_POOL", "")
+IDEAL_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_IDEAL_PROXY_POOL", "")
+PAYPAL_PROXY_POOL_RAW = os.getenv("OPENAI_PAY_PAYPAL_PROXY_POOL", "")
+PAYLINK_ENV_PATH = BASE_DIR / ".env"
+PROXY_TEST_URL = "https://api.ipify.org?format=json"
+PROXY_TEST_TIMEOUT = 15
+PROVIDER_PROXY_ENV_KEYS: dict[str, tuple[str, str]] = {
+    "pix": ("OPENAI_PAY_PIX_PROXY", "OPENAI_PAY_PIX_PROXY_POOL"),
+    "upi": ("OPENAI_PAY_INDIA_PROXY", "OPENAI_PAY_INDIA_PROXY_POOL"),
+    "kakao_pay": ("OPENAI_PAY_KOREA_PROXY", "OPENAI_PAY_KOREA_PROXY_POOL"),
+    "ideal": ("OPENAI_PAY_IDEAL_PROXY", "OPENAI_PAY_IDEAL_PROXY_POOL"),
+    "gcash": ("OPENAI_PAY_PH_PROXY", "OPENAI_PAY_PH_PROXY_POOL"),
+    "paypal": ("OPENAI_PAY_PAYPAL_PROXY", "OPENAI_PAY_PAYPAL_PROXY_POOL"),
+}
+PROXY_ENV_RUNTIME_NAMES = {
+    "OPENAI_PAY_PIX_PROXY": "PIX_STAGE_PROXY",
+    "OPENAI_PAY_PIX_PROXY_POOL": "PIX_PROXY_POOL",
+    "OPENAI_PAY_INDIA_PROXY": "INDIA_STAGE_PROXY",
+    "OPENAI_PAY_INDIA_PROXY_POOL": "INDIA_PROXY_POOL",
+    "OPENAI_PAY_KOREA_PROXY": "KOREA_STAGE_PROXY",
+    "OPENAI_PAY_KOREA_PROXY_POOL": "KOREA_PROXY_POOL",
+    "OPENAI_PAY_IDEAL_PROXY": "IDEAL_STAGE_PROXY",
+    "OPENAI_PAY_IDEAL_PROXY_POOL": "IDEAL_PROXY_POOL",
+    "OPENAI_PAY_PH_PROXY": "PH_STAGE_PROXY",
+    "OPENAI_PAY_PH_PROXY_POOL": "PH_PROXY_POOL",
+    "OPENAI_PAY_PAYPAL_PROXY": "PAYPAL_STAGE_PROXY",
+    "OPENAI_PAY_PAYPAL_PROXY_POOL": "PAYPAL_PROXY_POOL",
+}
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
@@ -302,6 +337,7 @@ WALLET_APPROVAL_LINE_CONFIG = {
         "display_label": "GrabPay",
     },
 }
+QUEUE_PROVIDER_LINK_TYPES = frozenset({"korea", "swiss", "ideal", "upi", "gcash"})
 FATAL_ACCOUNT_ERROR_CODES = {
     "token_invalidated",
     "account_deactivated",
@@ -467,6 +503,18 @@ class TaskDeleteRequest(BaseModel):
     job_id: str = Field(..., alias="jobId")
 
 
+class ProviderProxyUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    provider: str = ""
+    fallback_proxy: str | None = Field(None, alias="fallbackProxy")
+    proxy_pool: str | None = Field(None, alias="proxyPool")
+
+
+class ProviderProxyTestRequest(BaseModel):
+    provider: str = ""
+
+
 def normalize_proxy_url(value: str, scheme: str = "http") -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -510,7 +558,11 @@ GOPAY_PROVIDER_PROXY_POOL = parse_proxy_pool(GOPAY_PROVIDER_PROXY_POOL_RAW)
 KOREA_PROXY_POOL = parse_proxy_pool(KOREA_PROXY_POOL_RAW)
 SWISS_PROXY_POOL = parse_proxy_pool(SWISS_PROXY_POOL_RAW)
 INDIA_PROXY_POOL = parse_proxy_pool(INDIA_PROXY_POOL_RAW)
+PH_PROXY_POOL = parse_proxy_pool(PH_PROXY_POOL_RAW)
+IDEAL_PROXY_POOL = parse_proxy_pool(IDEAL_PROXY_POOL_RAW)
+PAYPAL_PROXY_POOL = parse_proxy_pool(PAYPAL_PROXY_POOL_RAW)
 _proxy_cursor_lock = threading.Lock()
+_proxy_config_lock = threading.Lock()
 _proxy_cursor: dict[str, int] = {
     "default": 0,
     "provider": 0,
@@ -520,6 +572,8 @@ _proxy_cursor: dict[str, int] = {
     "korea": 0,
     "swiss": 0,
     "upi": 0,
+    "gcash": 0,
+    "paypal": 0,
 }
 _stats_lock = threading.Lock()
 _app_stats: dict[str, Any] = {
@@ -837,6 +891,8 @@ def app_stats_snapshot() -> dict[str, Any]:
         "default_proxy_pool_size": len(DEFAULT_PROXY_POOL) or (1 if DEFAULT_PROXY else 0),
         "provider_proxy_pool_size": len(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if PROVIDER_STAGE_PROXY or DEFAULT_PROXY else 0),
         "gopay_proxy_pool_size": len(GOPAY_PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if GOPAY_PROVIDER_STAGE_PROXY or DEFAULT_PROXY else 0),
+        "ph_proxy_pool_size": len(PH_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if PH_STAGE_PROXY or DEFAULT_PROXY else 0),
+        "ideal_proxy_pool_size": len(IDEAL_PROXY_POOL or PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL) or (1 if IDEAL_STAGE_PROXY or PROVIDER_STAGE_PROXY or DEFAULT_PROXY else 0),
         "promo_enabled_default": True,
         "task_running_total": task_running,
         "task_done_total": task_done,
@@ -861,6 +917,7 @@ def set_progress(
     done: bool = False,
     error: bool = False,
     result: dict[str, Any] | None = None,
+    link_type: str = "",
 ) -> None:
     global _progress_jobs
     if not job_id:
@@ -877,6 +934,9 @@ def set_progress(
             "created_at": float(existing.get("created_at") or time.time()),
             "updated_at": time.time(),
         }
+        resolved_link_type = normalize_link_type(link_type) if str(link_type or "").strip() else str(existing.get("link_type") or "").strip()
+        if resolved_link_type:
+            snapshot["link_type"] = resolved_link_type
         if result is not None:
             snapshot["result"] = redact_value(result)
         elif isinstance(existing.get("result"), dict):
@@ -951,26 +1011,45 @@ def _normalize_progress_job_items(items: list[dict[str, Any]], limit: int | None
                 "error": is_error,
                 "created_at": float(item.get("created_at") or 0.0),
                 "updated_at": float(item.get("updated_at") or 0.0),
+                "link_type": progress_snapshot_link_type(item),
                 "result": item.get("result") if isinstance(item.get("result"), dict) else None,
             }
         )
     return normalized
 
 
-def list_progress_jobs(limit: int = 50) -> list[dict[str, Any]]:
-    global _progress_jobs
-    with _progress_lock:
-        refresh_progress_cache()
-        items = [dict(item) for item in _progress_jobs.values()]
-    return _normalize_progress_job_items(items, limit=limit)
+def progress_snapshot_link_type(snapshot: dict[str, Any]) -> str:
+    raw_link_type = str(snapshot.get("link_type") or "").strip()
+    result = snapshot.get("result")
+    if not raw_link_type and isinstance(result, dict):
+        raw_link_type = str(result.get("link_type") or result.get("payment_link_type") or "").strip()
+        nested = result.get("value")
+        if not raw_link_type and isinstance(nested, dict):
+            raw_link_type = str(nested.get("link_type") or nested.get("payment_link_type") or "").strip()
+    return normalize_link_type(raw_link_type) if raw_link_type else ""
 
 
-def list_progress_jobs_page(page: int = 1, page_size: int = 10) -> dict[str, Any]:
+def list_progress_jobs(limit: int = 50, link_type: str = "") -> list[dict[str, Any]]:
     global _progress_jobs
     with _progress_lock:
         refresh_progress_cache()
         items = [dict(item) for item in _progress_jobs.values()]
     normalized = _normalize_progress_job_items(items, limit=None)
+    requested_link_type = normalize_link_type(link_type) if str(link_type or "").strip() else ""
+    if requested_link_type:
+        normalized = [item for item in normalized if item.get("link_type") == requested_link_type]
+    return normalized[: max(1, min(int(limit or 50), 200))]
+
+
+def list_progress_jobs_page(page: int = 1, page_size: int = 10, link_type: str = "") -> dict[str, Any]:
+    global _progress_jobs
+    with _progress_lock:
+        refresh_progress_cache()
+        items = [dict(item) for item in _progress_jobs.values()]
+    normalized = _normalize_progress_job_items(items, limit=None)
+    requested_link_type = normalize_link_type(link_type) if str(link_type or "").strip() else ""
+    if requested_link_type:
+        normalized = [item for item in normalized if item.get("link_type") == requested_link_type]
     total = len(normalized)
     bounded_page_size = max(1, min(int(page_size or 10), 50))
     total_pages = max(1, (total + bounded_page_size - 1) // bounded_page_size)
@@ -1191,6 +1270,8 @@ def provider_page_path_for_link_type(link_type: str) -> str:
         return "/in-qr"
     if normalized == "ideal":
         return "/nl-qr"
+    if normalized == "gcash":
+        return "/ph-qr"
     return "/qr"
 
 
@@ -1261,6 +1342,160 @@ def explicit_proxy_for_link_type(proxy: str = "", link_type: str = "") -> str:
     return explicit
 
 
+def provider_proxy_env_keys(provider: str) -> tuple[str, str]:
+    public_type = str(provider or "").strip().lower()
+    if public_type not in PROVIDERS or public_type not in PROVIDER_PROXY_ENV_KEYS:
+        raise HTTPException(status_code=400, detail=f"unsupported provider '{public_type or '-'}'")
+    return PROVIDER_PROXY_ENV_KEYS[public_type]
+
+
+def validate_proxy_value(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    normalized = normalize_proxy_url(raw)
+    parsed = urlsplit(normalized)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="proxy port is invalid") from exc
+    if parsed.scheme not in {"http", "https", "socks5", "socks5h"} or not parsed.hostname or not port:
+        raise HTTPException(status_code=400, detail="proxy must include a supported scheme, host, and port")
+    return normalized
+
+
+def normalize_proxy_pool_value(value: str) -> list[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"[\r\n,;]+", raw)
+    if len(parts) > 500:
+        raise HTTPException(status_code=400, detail="proxy pool exceeds 500 entries")
+    return [validate_proxy_value(item) for item in parts if str(item).strip()]
+
+
+def proxy_config_view(provider: str) -> dict[str, Any]:
+    public_type = str(provider or "").strip().lower()
+    fallback_key, pool_key = provider_proxy_env_keys(public_type)
+    fallback_value = str(os.getenv(fallback_key, "") or "").strip()
+    pool_values = parse_proxy_pool(str(os.getenv(pool_key, "") or ""))
+    definition = PROVIDERS[public_type]
+    return {
+        "provider": public_type,
+        "native_type": definition.native_type,
+        "display_name": definition.display_name,
+        "fallback": {
+            "env_key": fallback_key,
+            "configured": bool(fallback_value),
+            "masked_value": "configured" if fallback_value else "",
+        },
+        "pool": {
+            "env_key": pool_key,
+            "configured": bool(pool_values),
+            "count": len(pool_values),
+            "masked_values": ["configured"] * min(len(pool_values), 10),
+        },
+    }
+
+
+def _env_assignment(key: str, value: str) -> str:
+    return f"{key}={json.dumps(value, ensure_ascii=False)}"
+
+
+def write_paylink_env_values(values: dict[str, str]) -> None:
+    if not values:
+        return
+    path = Path(PAYLINK_ENV_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _proxy_config_lock:
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        newline = "\r\n" if "\r\n" in existing else "\n"
+        key_pattern = "|".join(re.escape(key) for key in values)
+        assignment = re.compile(rf"^\s*(?:export\s+)?(?P<key>{key_pattern})\s*=.*(?:\r?\n)?$")
+        updated: set[str] = set()
+        output: list[str] = []
+        for line in existing.splitlines(keepends=True):
+            match = assignment.match(line)
+            if match is None:
+                output.append(line)
+                continue
+            key = match.group("key")
+            if key in updated:
+                continue
+            output.append(f"{_env_assignment(key, values[key])}{newline}")
+            updated.add(key)
+        if output and not output[-1].endswith(("\n", "\r")):
+            output.append(newline)
+        for key, value in values.items():
+            if key not in updated:
+                output.append(f"{_env_assignment(key, value)}{newline}")
+
+        fd, temporary_path = tempfile.mkstemp(prefix=".paylink-env-", suffix=".tmp", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write("".join(output))
+            os.replace(temporary_path, path)
+        except Exception:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+            raise
+
+
+def apply_proxy_config_runtime(values: dict[str, str]) -> None:
+    for key, value in values.items():
+        os.environ[key] = value
+        runtime_name = PROXY_ENV_RUNTIME_NAMES[key]
+        globals()[runtime_name] = parse_proxy_pool(value) if runtime_name.endswith("_POOL") else value
+
+
+def update_provider_proxy_config(request: ProviderProxyUpdateRequest) -> dict[str, Any]:
+    public_type = str(request.provider or "").strip().lower()
+    fallback_key, pool_key = provider_proxy_env_keys(public_type)
+    values: dict[str, str] = {}
+    if request.fallback_proxy is not None:
+        values[fallback_key] = validate_proxy_value(request.fallback_proxy)
+    if request.proxy_pool is not None:
+        values[pool_key] = ";".join(normalize_proxy_pool_value(request.proxy_pool))
+    if not values:
+        raise HTTPException(status_code=400, detail="select at least one proxy setting to update")
+    write_paylink_env_values(values)
+    apply_proxy_config_runtime(values)
+    log_event("config.proxy.save", "provider proxy configuration saved", status=public_type)
+    return {"ok": True, "config": proxy_config_view(public_type)}
+
+
+def provider_proxy_connectivity_test(provider: str) -> dict[str, Any]:
+    public_type = str(provider or "").strip().lower()
+    fallback_key, pool_key = provider_proxy_env_keys(public_type)
+    fallback = validate_proxy_value(str(os.getenv(fallback_key, "") or ""))
+    pool = [validate_proxy_value(value) for value in parse_proxy_pool(str(os.getenv(pool_key, "") or ""))]
+    candidates: list[str] = []
+    seen = set()
+    for value in [*pool, fallback]:
+        if value and value not in seen:
+            seen.add(value)
+            candidates.append(value)
+    if not candidates:
+        raise HTTPException(status_code=400, detail="no dedicated proxy is configured for this provider")
+    started_at = time.monotonic()
+    session = requests.Session()
+    set_proxy_url(session, candidates[0])
+    try:
+        response = session.get(PROXY_TEST_URL, timeout=PROXY_TEST_TIMEOUT)
+        ok = 200 <= int(response.status_code or 0) < 300
+        message = "proxy connectivity succeeded" if ok else f"proxy connectivity returned HTTP {int(response.status_code or 0)}"
+    except requests.RequestException as exc:
+        ok = False
+        message = f"proxy connectivity failed ({exc.__class__.__name__})"
+    finally:
+        session.close()
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    log_event("config.proxy.test", "provider proxy connectivity checked", status=f"{public_type}:{'ok' if ok else 'failed'}")
+    return {"ok": ok, "provider": public_type, "duration_ms": duration_ms, "message": message}
+
+
 def effective_default_proxy(proxy: str = "", link_type: str = "") -> str:
     explicit = explicit_proxy_for_link_type(proxy, link_type)
     if explicit:
@@ -1268,6 +1503,18 @@ def effective_default_proxy(proxy: str = "", link_type: str = "") -> str:
     normalized_link_type = normalize_link_type(link_type)
     if normalized_link_type == "pix":
         return next_proxy("pix", PIX_PROXY_POOL or DEFAULT_PROXY_POOL, PIX_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR"))
+    if normalized_link_type == "gcash":
+        return next_proxy(
+            "gcash",
+            PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
+            PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
+    if normalized_link_type == "paypal":
+        return next_proxy(
+            "paypal",
+            PAYPAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "US"),
+            PAYPAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US"),
+        )
     wallet_config = wallet_approval_line_config(normalized_link_type)
     if wallet_config:
         return next_proxy(
@@ -1290,8 +1537,8 @@ def effective_default_proxy(proxy: str = "", link_type: str = "") -> str:
     if normalized_link_type == "ideal":
         return next_proxy(
             "ideal",
-            rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "NL"),
-            proxy_for_region(DEFAULT_PROXY, "NL"),
+            IDEAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "NL"),
+            IDEAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "NL"),
         )
     if normalized_link_type == "upi":
         return next_proxy(
@@ -1317,11 +1564,17 @@ def proxy_candidates_for_link_type(proxy: str = "", link_type: str = "") -> list
         pool = SWISS_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "CH")
         fallback = SWISS_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "CH")
     elif normalized_link_type == "ideal":
-        pool = rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL")
-        fallback = proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL")
+        pool = IDEAL_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL")
+        fallback = IDEAL_STAGE_PROXY or proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL")
     elif normalized_link_type == "upi":
         pool = INDIA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "IN")
         fallback = INDIA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "IN")
+    elif normalized_link_type == "gcash":
+        pool = PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH")
+        fallback = PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH")
+    elif normalized_link_type == "paypal":
+        pool = PAYPAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "US")
+        fallback = PAYPAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US")
     elif wallet_approval_line_config(normalized_link_type):
         wallet_config = wallet_approval_line_config(normalized_link_type)
         pool = GOPAY_PROVIDER_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, wallet_config["proxy_region"])
@@ -1427,14 +1680,20 @@ def provider_stage_proxy(req: LongLinkRequest) -> str:
     if normalized_link_type == "ideal":
         return next_proxy(
             "ideal",
-            rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL"),
-            proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL"),
+            IDEAL_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL"),
+            IDEAL_STAGE_PROXY or proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL"),
         )
     if normalized_link_type == "pix":
         return next_proxy(
             "pix",
             PIX_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "BR"),
             PIX_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR"),
+        )
+    if normalized_link_type == "gcash":
+        return next_proxy(
+            "gcash",
+            PH_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
+            PH_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
         )
     wallet_config = wallet_approval_line_config(req.link_type)
     if wallet_config:
@@ -1478,6 +1737,8 @@ def normalize_link_type(link_type: str) -> str:
         "kr": "korea",
         "korea": "korea",
         "korean": "korea",
+        "kakao_pay": "korea",
+        "kakaopay": "korea",
         "ch": "swiss",
         "swiss": "swiss",
         "twint": "swiss",
@@ -1589,6 +1850,8 @@ def effective_payment_locale(link_type: str, requested: str = "") -> str:
     if normalized == "ideal":
         return "nl"
     if normalized == "upi":
+        return "en"
+    if normalized == "paypal":
         return "en"
     wallet_config = wallet_approval_line_config(normalized)
     if wallet_config:
@@ -2315,7 +2578,7 @@ def checkout_payment_method_tokens(data: dict[str, Any]) -> list[str]:
 
 def ensure_checkout_supports_requested_wallet(data: dict[str, Any], req: LongLinkRequest) -> None:
     requested = normalize_link_type(req.link_type)
-    if requested not in {"gcash", "grabpay"}:
+    if requested not in {"gcash", "grabpay", "paypal"}:
         return
     available = checkout_payment_method_tokens(data)
     if requested in available:
@@ -4487,6 +4750,14 @@ def index(request: Request) -> Response:
     return Response(html, media_type="text/html; charset=utf-8")
 
 
+@app.get("/settings")
+def settings_page(request: Request) -> Response:
+    redirect = require_page_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    if redirect is not None:
+        return redirect
+    return FileResponse(SETTINGS_PAGE)
+
+
 @app.get("/qr")
 def qr_page(request: Request) -> Response:
     redirect = require_page_scope(request, QR_SCOPE, ZC_DEFAULT_JWT_SECRET)
@@ -4525,6 +4796,14 @@ def nl_qr_page(request: Request) -> Response:
     if redirect is not None:
         return redirect
     return FileResponse(NL_QR_PAGE)
+
+
+@app.get("/ph-qr")
+def ph_qr_page(request: Request) -> Response:
+    redirect = require_page_scope(request, QR_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    if redirect is not None:
+        return redirect
+    return FileResponse(PH_QR_PAGE)
 
 
 @app.get("/id-qr")
@@ -4657,9 +4936,17 @@ def checkout_progress_many(request: Request, job_ids: str = "") -> dict[str, Any
 
 
 @app.get("/api/tasks")
-def list_task_snapshots(request: Request, page: int = 1, page_size: int = 10) -> dict[str, Any]:
+def list_task_snapshots(request: Request, page: int = 1, page_size: int = 10, provider: str = "") -> dict[str, Any]:
     require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
-    payload = list_progress_jobs_page(page=page, page_size=page_size)
+    requested_provider = str(provider or "").strip().lower()
+    definition = PROVIDERS.get(requested_provider) if requested_provider else None
+    if requested_provider and definition is None:
+        raise HTTPException(status_code=400, detail=f"unsupported provider '{requested_provider}'")
+    payload = list_progress_jobs_page(
+        page=page,
+        page_size=page_size,
+        link_type=definition.native_type if definition else "",
+    )
     return {
         "ok": True,
         **payload,
@@ -4683,15 +4970,8 @@ def task_logs(request: Request, job_id: str = "", limit: int = 200) -> dict[str,
 @app.get("/api/v1/upi/tasks")
 def upi_task_list(request: Request, page: int = 1, page_size: int = 50) -> dict[str, Any]:
     require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
-    payload = list_progress_jobs_page(page=page, page_size=page_size)
-    items = [item for item in payload.get("items", []) if isinstance(item.get("result"), dict) and str((item.get("result") or {}).get("link_type") or "").strip() == "upi"]
-    summary = {
-        "total": len(items),
-        "running": len([item for item in items if not item.get("done")]),
-        "done": len([item for item in items if item.get("done") and not item.get("error")]),
-        "failed": len([item for item in items if item.get("error")]),
-    }
-    return {"ok": True, "items": items, "summary": summary, "page": 1, "page_size": len(items), "total": len(items), "total_pages": 1}
+    payload = list_progress_jobs_page(page=page, page_size=page_size, link_type="upi")
+    return {"ok": True, **payload}
 
 
 @app.get("/api/v1/upi/tasks/logs")
@@ -4803,12 +5083,30 @@ def pix_clear_terminal(request: Request) -> dict[str, Any]:
     return {"ok": True, "removed": removed}
 
 
+@app.get("/api/config/proxy")
+def get_provider_proxy_config(request: Request, provider: str = "") -> dict[str, Any]:
+    require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    return {"ok": True, "config": proxy_config_view(provider)}
+
+
+@app.put("/api/config/proxy")
+def save_provider_proxy_config(request: Request, payload: ProviderProxyUpdateRequest) -> dict[str, Any]:
+    require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    return update_provider_proxy_config(payload)
+
+
+@app.post("/api/config/proxy/test")
+def test_provider_proxy_config(request: Request, payload: ProviderProxyTestRequest) -> dict[str, Any]:
+    require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    return provider_proxy_connectivity_test(payload.provider)
+
+
 @app.get("/api/provider/pending")
 def provider_pending(request: Request, link_type: str = "", limit: int = 20) -> dict[str, Any]:
     require_api_scope(request, QR_SCOPE, ZC_DEFAULT_JWT_SECRET)
     normalized = normalize_link_type(link_type)
-    if normalized not in {"korea", "swiss", "ideal", "upi"}:
-        raise HTTPException(status_code=400, detail="provider link_type must be korea, swiss, ideal, or upi")
+    if normalized not in QUEUE_PROVIDER_LINK_TYPES:
+        raise HTTPException(status_code=400, detail="provider link_type must be korea, swiss, ideal, upi, or gcash")
     return {
         "ok": True,
         "items": list_provider_pending_sessions(normalized, limit=limit),
@@ -4842,8 +5140,8 @@ async def internal_upi_stream(request: Request, req: UpiApiRequest) -> Streaming
 def provider_delete(request: Request, link_type: str = "", cs_id: str = "") -> dict[str, Any]:
     require_api_scope(request, QR_SCOPE, ZC_DEFAULT_JWT_SECRET)
     normalized = normalize_link_type(link_type)
-    if normalized not in {"korea", "swiss", "ideal", "upi"}:
-        raise HTTPException(status_code=400, detail="provider link_type must be korea, swiss, ideal, or upi")
+    if normalized not in QUEUE_PROVIDER_LINK_TYPES:
+        raise HTTPException(status_code=400, detail="provider link_type must be korea, swiss, ideal, upi, or gcash")
     normalized_cs_id = str(cs_id or "").strip()
     if not normalized_cs_id:
         raise HTTPException(status_code=400, detail="cs_id is required")
@@ -4859,8 +5157,8 @@ def provider_delete(request: Request, link_type: str = "", cs_id: str = "") -> d
 def provider_clear_terminal(request: Request, link_type: str = "") -> dict[str, Any]:
     require_api_scope(request, QR_SCOPE, ZC_DEFAULT_JWT_SECRET)
     normalized = normalize_link_type(link_type)
-    if normalized not in {"korea", "swiss", "ideal", "upi"}:
-        raise HTTPException(status_code=400, detail="provider link_type must be korea, swiss, ideal, or upi")
+    if normalized not in QUEUE_PROVIDER_LINK_TYPES:
+        raise HTTPException(status_code=400, detail="provider link_type must be korea, swiss, ideal, upi, or gcash")
     removed = clear_terminal_provider_pending_sessions(RUNTIME_DIR, normalized)
     log_event("provider.clear_terminal", "terminal provider sessions cleared", status=f"{normalized}:{removed}")
     return {"ok": True, "removed": removed}
@@ -4957,8 +5255,8 @@ def generate_long_link_core(req: LongLinkRequest) -> LongLinkResponse:
     resolved_zc_token = effective_zc_token(req.zc_token)
     resolved_zc_password = effective_zc_password(req.zc_password)
     claimed_account: dict[str, Any] | None = None
-    set_progress(job_id, percent=5, text="读取 Token", done=False, error=False)
     link_type = normalize_link_type(req.link_type)
+    set_progress(job_id, percent=5, text="读取 Token", done=False, error=False, link_type=link_type)
     try:
         claimed_account = maybe_claim_zc_account(req, job_id)
         if link_type == "pix":
@@ -4985,7 +5283,7 @@ def generate_long_link_core(req: LongLinkRequest) -> LongLinkResponse:
                 "pix_qr_image_url_svg": "",
                 "pix_expires_at": 0,
             }
-            payment_method_type = ""
+            payment_method_type = payment_method_type_for_link_type(link_type)
             stripe_hosted_url = ""
             if link_type in {"korea", "swiss", "ideal", "upi", "gopay", "gcash", "grabpay"}:
                 provider_proxy = provider_stage_proxy(req)
@@ -5061,7 +5359,7 @@ def generate_long_link_core(req: LongLinkRequest) -> LongLinkResponse:
             or str(provider_fields.get("upi_hosted_url") or "").strip()
             or str(provider_fields.get("pix_hosted_instructions_url") or "").strip()
         )
-        if link_type in {"korea", "swiss", "ideal", "upi", "pix"} and provider_display_ready:
+        if link_type in {*QUEUE_PROVIDER_LINK_TYPES, "pix"} and provider_display_ready:
             save_provider_pending_session(
                 {
                     "csId": checkout["cs_id"],

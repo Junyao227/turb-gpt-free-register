@@ -832,8 +832,8 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
-    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell4" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell4"></script>
   </head>
   <body>
     <div class="page">
@@ -880,6 +880,8 @@
                       <option value="swiss">瑞士线路（CH / CHF）</option>
                       <option value="upi">印度线路（IN / INR）</option>
                       <option value="ideal">荷兰 iDEAL（NL / EUR）</option>
+                      <option value="gcash">菲律宾 GCash（PH / PHP）</option>
+                      <option value="paypal">美国 PayPal（US / USD）</option>
                       <option value="gopay">印尼线路（ID / IDR）</option>
                     </select>
                     <div class="muted">按线路返回对应的支付链接或支付页。</div>
@@ -1184,6 +1186,28 @@
           promoEnabled: true,
           resultLabel: "荷兰 iDEAL 支付页",
           statusText: "荷兰 iDEAL 支付页已生成",
+        },
+        gcash: {
+          title: "菲律宾 GCash 线路",
+          icon: "PH",
+          linkLabel: "GCash 支付页（菲律宾 PHP）",
+          country: "PH",
+          currency: "PHP",
+          locale: "en-PH",
+          promoEnabled: true,
+          resultLabel: "菲律宾 GCash 支付页",
+          statusText: "菲律宾 GCash 支付页已生成",
+        },
+        paypal: {
+          title: "美国 PayPal 线路",
+          icon: "US",
+          linkLabel: "PayPal Checkout（美国 USD）",
+          country: "US",
+          currency: "USD",
+          locale: "en",
+          promoEnabled: true,
+          resultLabel: "PayPal Checkout 链接",
+          statusText: "PayPal Checkout 链接已生成",
         },
         gopay: {
           title: "印度尼西亚 GoPay 线路",
@@ -1495,7 +1519,8 @@
           const sequence = taskListLoadSequence + 1;
           taskListLoadSequence = sequence;
           taskListActiveSequence = sequence;
-          const response = await apiFetch(`/api/tasks?page=${encodeURIComponent(currentPage)}&page_size=${encodeURIComponent(TASK_PAGE_SIZE)}`);
+          const provider = publicProviderType($("linkType").value);
+          const response = await apiFetch(`/api/tasks?page=${encodeURIComponent(currentPage)}&page_size=${encodeURIComponent(TASK_PAGE_SIZE)}&provider=${encodeURIComponent(provider)}`);
           if (!response.ok) return;
           const data = await readJsonResponse(response);
           if (taskListActiveSequence !== sequence) return;
@@ -1548,7 +1573,7 @@
       }
 
       function isProviderQueueLine(linkType) {
-        return ["korea", "swiss", "upi"].includes(String(linkType || "").trim());
+        return ["korea", "swiss", "upi", "gcash"].includes(String(linkType || "").trim());
       }
 
       function hasProviderPaymentPage(data) {
@@ -1557,6 +1582,10 @@
 
       function walletLineNeedsProviderLink(linkType) {
         return ["gopay", "gcash", "grabpay"].includes(String(linkType || "").trim());
+      }
+
+      function walletLineLabel(linkType) {
+        return String(linkType || "").trim() === "gcash" ? "GCash" : "GoPay";
       }
 
       function resolveTaskResultLink(data) {
@@ -1582,8 +1611,7 @@
       }
 
       function resolveMainLinkLabel(data, line, providerReady) {
-        if (data.link_type === "gopay" && providerReady) return "GoPay 跳转链接";
-        if (data.link_type === "gopay") return "GoPay 跳转链接";
+        if (["gopay", "gcash"].includes(data.link_type)) return `${walletLineLabel(data.link_type)} 跳转链接`;
         if (providerReady) {
           if (data.link_type === "pix") return "PIX 支付页";
           return line.resultLabel;
@@ -1593,8 +1621,7 @@
       }
 
       function resolveOpenLinkText(data, providerReady) {
-        if (data.link_type === "gopay" && providerReady) return "打开 GoPay";
-        if (data.link_type === "gopay") return "等待 GoPay";
+        if (["gopay", "gcash"].includes(data.link_type)) return `${providerReady ? "打开" : "等待"} ${walletLineLabel(data.link_type)}`;
         if (providerReady && data.link_type === "upi") return "查看二维码";
         if (providerReady) return "打开支付页";
         const checkoutUrl = String(data.checkout_url || "").trim();
@@ -1604,8 +1631,7 @@
       }
 
       function resolveCopyLinkText(data, providerReady) {
-        if (data.link_type === "gopay" && providerReady) return "复制 GoPay";
-        if (data.link_type === "gopay") return "等待 GoPay";
+        if (["gopay", "gcash"].includes(data.link_type)) return providerReady ? `复制 ${walletLineLabel(data.link_type)}` : `等待 ${walletLineLabel(data.link_type)}`;
         if (providerReady && data.link_type === "upi") return "复制二维码内容";
         if (providerReady) return "复制支付页";
         const checkoutUrl = String(data.checkout_url || "").trim();
@@ -1616,14 +1642,15 @@
 
       function resolveExtractStatus(data, line, failureCount, providerReady) {
         if (failureCount) return `部分成功，失败 ${failureCount} 个`;
-        if (data.link_type === "gopay") {
+        if (["gopay", "gcash"].includes(data.link_type)) {
+          const walletLabel = walletLineLabel(data.link_type);
           const approvalResult = String(data.approval_result || "").trim() || "-";
           const submissionState = String(data.submission_state || "").trim() || "-";
           if (approvalResult !== "approved") {
-            return `GoPay 未成功：提交状态=${submissionState} / approval结果=${approvalResult}`;
+            return `${walletLabel} 未成功：提交状态=${submissionState} / approval结果=${approvalResult}`;
           }
           if (!providerReady) {
-            return `GoPay 未成功：approval 已通过，但未拿到跳转链接`;
+            return `${walletLabel} 未成功：approval 已通过，但未拿到跳转链接`;
           }
           return `提交状态=${submissionState} / approval结果=${approvalResult}`;
         }
@@ -1643,6 +1670,7 @@
         if (data.link_type === "korea") return "检测到韩国支付会话，请到 /kr-qr 页面查看队列。";
         if (data.link_type === "swiss") return "检测到瑞士支付会话，请到 /ch-qr 页面查看队列。";
         if (data.link_type === "upi") return "检测到印度 UPI 二维码会话，请到 /in-qr 页面查看队列。";
+        if (data.link_type === "gcash") return "检测到菲律宾 GCash 支付会话，请到 /ph-qr 页面查看队列。";
         return "";
       }
 
@@ -1650,6 +1678,7 @@
         if (data.link_type === "korea") return "韩国支付队列";
         if (data.link_type === "swiss") return "瑞士支付队列";
         if (data.link_type === "upi") return "印度 UPI 队列";
+        if (data.link_type === "gcash") return "菲律宾 GCash 队列";
         return "PIX 二维码队列";
       }
 
@@ -1702,9 +1731,10 @@
         setRowValue("pixQueueRow", "pixQueueHint", queueMessage);
         $("result").classList.add("show");
         setLinkEnabled(Boolean(currentLongUrl));
-        const doneText = data.link_type === "gopay" ? (providerReady ? "GoPay 跳转链接已返回" : "GoPay 未成功") : "生成完成";
+        const walletLinkType = ["gopay", "gcash"].includes(data.link_type);
+        const doneText = walletLinkType ? (providerReady ? `${walletLineLabel(data.link_type)} 跳转链接已返回` : `${walletLineLabel(data.link_type)} 未成功`) : "生成完成";
         setStatus(`${modeText}完成：成功 ${successCount} 个，失败 ${failureCount} 个。`);
-        setProgress(100, doneText, Boolean(data.link_type === "gopay" && !providerReady));
+        setProgress(100, doneText, Boolean(walletLinkType && !providerReady));
       }
 
       async function fetchProgressItems(jobIds) {
@@ -2036,6 +2066,7 @@
       $("linkType").addEventListener("change", () => {
         applyLineConfig();
         syncProviderToUrl();
+        if (currentConsoleView() === "tasks") refreshTaskList(1);
       });
       $("concurrency").addEventListener("change", saveZcConfig);
       manualGenerateButton.addEventListener("click", manualGenerate);

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paylink 代理配置</title>
+    <link rel="stylesheet" href="/assets/settings.css?v=20260809-proxy1" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell4" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell4"></script>
+    <script defer src="/assets/settings.js?v=20260809-proxy1"></script>
+  </head>
+  <body class="settings-page">
+    <main class="settings-page__main">
+      <header class="settings-page__header">
+        <p class="settings-page__eyebrow">代理池</p>
+        <h1 id="providerTitle">加载配置</h1>
+      </header>
+
+      <form id="proxyConfigForm" class="proxy-config" novalidate>
+        <section class="proxy-config__section" aria-labelledby="fallbackHeading">
+          <div class="proxy-config__section-header">
+            <div>
+              <h2 id="fallbackHeading">备用代理</h2>
+              <p id="fallbackState" class="proxy-config__meta">-</p>
+            </div>
+            <label class="proxy-config__toggle" for="fallbackUpdate">
+              <input id="fallbackUpdate" type="checkbox" />
+              <span>更新</span>
+            </label>
+          </div>
+          <label class="proxy-config__label" for="fallbackProxy">代理地址</label>
+          <input id="fallbackProxy" name="fallbackProxy" type="text" autocomplete="off" spellcheck="false" placeholder="http://host:port" disabled />
+        </section>
+
+        <section class="proxy-config__section" aria-labelledby="poolHeading">
+          <div class="proxy-config__section-header">
+            <div>
+              <h2 id="poolHeading">代理池</h2>
+              <p id="poolState" class="proxy-config__meta">-</p>
+            </div>
+            <label class="proxy-config__toggle" for="poolUpdate">
+              <input id="poolUpdate" type="checkbox" />
+              <span>更新</span>
+            </label>
+          </div>
+          <label class="proxy-config__label" for="proxyPool">代理地址</label>
+          <textarea id="proxyPool" name="proxyPool" rows="8" autocomplete="off" spellcheck="false" placeholder="每行一个代理地址" disabled></textarea>
+        </section>
+
+        <div class="proxy-config__actions">
+          <button id="saveButton" type="submit">保存</button>
+          <button id="testButton" class="proxy-config__secondary" type="button">测试连通性</button>
+        </div>
+        <p id="formStatus" class="proxy-config__status" role="status" aria-live="polite">加载中...</p>
+      </form>
+    </main>
+  </body>
+</html>

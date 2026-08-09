@@ -136,6 +136,8 @@ def test_korea_and_ideal_checkout_candidates_use_target_regions(monkeypatch):
     ideal_proxy = "http://fixture-user-region-NL-sid-demo-t-5:fixture-pass@proxy.example.test:443"
     monkeypatch.setattr(app, "KOREA_PROXY_POOL", [korea_proxy])
     monkeypatch.setattr(app, "KOREA_STAGE_PROXY", "")
+    monkeypatch.setattr(app, "IDEAL_PROXY_POOL", [])
+    monkeypatch.setattr(app, "IDEAL_STAGE_PROXY", "")
     monkeypatch.setattr(app, "PROVIDER_PROXY_POOL", [ideal_proxy])
     monkeypatch.setattr(app, "PROVIDER_STAGE_PROXY", "")
     monkeypatch.setattr(app, "DEFAULT_PROXY_POOL", [])
@@ -189,14 +191,25 @@ def test_provider_stage_proxy_prefers_japan_pool_for_gopay(monkeypatch):
     assert "region-JP" in proxy
 
 
-def test_provider_stage_proxy_prefers_philippines_pool(monkeypatch):
+def test_gcash_checkout_and_provider_stages_prefer_dedicated_ph_pool(monkeypatch):
+    ph_proxy = "http://fixture-user-region-PH-sid-demo-t-5:fixture-pass@proxy.example.test:443"
     monkeypatch.setattr(
         app,
-        "GOPAY_PROVIDER_PROXY_POOL",
-        ["http://fixture-user-region-PH-sid-demo-t-5:fixture-pass@proxy.example.test:443"],
+        "PH_PROXY_POOL",
+        [ph_proxy],
     )
-    monkeypatch.setattr(app, "DEFAULT_PROXY_POOL", [])
-    monkeypatch.setattr(app, "GOPAY_PROVIDER_STAGE_PROXY", "")
+    monkeypatch.setattr(app, "PH_STAGE_PROXY", "")
+    monkeypatch.setattr(
+        app,
+        "DEFAULT_PROXY_POOL",
+        ["http://fixture-user-region-JP-sid-default-t-5:fixture-pass@proxy.example.test:443"],
+    )
+    monkeypatch.setattr(
+        app,
+        "PROVIDER_PROXY_POOL",
+        ["http://fixture-user-region-JP-sid-provider-t-5:fixture-pass@proxy.example.test:443"],
+    )
+    monkeypatch.setattr(app, "PROVIDER_STAGE_PROXY", "")
     monkeypatch.setattr(
         app,
         "DEFAULT_PROXY",
@@ -204,7 +217,11 @@ def test_provider_stage_proxy_prefers_philippines_pool(monkeypatch):
     )
     monkeypatch.setitem(app._proxy_cursor, "gcash", 0)
 
+    checkout_candidates = app.proxy_candidates_for_link_type("", "gcash")
     proxy = app.provider_stage_proxy(app.LongLinkRequest(link_type="gcash"))
 
+    assert checkout_candidates[0] == ph_proxy
+    assert all("region-PH" in candidate for candidate in checkout_candidates)
+    assert all("region-JP" not in candidate for candidate in checkout_candidates)
     assert "region-PH" in proxy
     assert "region-JP" not in proxy

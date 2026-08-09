@@ -41,6 +41,8 @@ def test_debug_generate_asset_exists():
     assert "autoClaimZc: false" in text
     assert "Provider 线路调试" in text
     assert "印度 UPI（IN / INR）" in text
+    assert "菲律宾 GCash（PH / PHP）" in text
+    assert "美国 PayPal（US / USD）" in text
     assert "印尼 GoPay（ID / IDR）" in text
     assert "菲律宾 GCash（PH / PHP）" in text
     assert "菲律宾 GrabPay（PH / PHP）" in text
@@ -81,6 +83,7 @@ def test_main_index_task_table_supports_click_row_and_richer_logs():
     assert "function renderResultPreview" in text
     assert 'id="previewRow"' in text
     assert 'id="previewMedia"' in text
+    assert '&provider=${encodeURIComponent(provider)}' in text
 
 
 def test_console_shell_uses_registry_backed_two_level_navigation():
@@ -94,6 +97,8 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
         "kr-qr.html",
         "in-qr.html",
         "nl-qr.html",
+        "ph-qr.html",
+        "settings.html",
         "upi.html",
         "upi-tasks.html",
         "upi-logs.html",
@@ -104,7 +109,7 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
         text = read_public_asset(page)
         assert "/assets/app-shell.css" in text
         assert "/assets/app-shell.js" in text
-        assert "v=20260809-shell2" in text
+        assert "v=20260809-shell4" in text
 
     assert 'fetch("/api/providers"' in shell_js
     assert '["generate", "生成中心"]' in shell_js
@@ -112,8 +117,11 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
     assert '["queues", "支付队列"]' in shell_js
     assert '["debug", "调试工具"]' in shell_js
     assert '["stats", "运行统计"]' in shell_js
+    assert '["settings", "配置"]' in shell_js
     assert 'korea: "kakao_pay"' in shell_js
+    assert '"/ph-qr": "gcash"' in shell_js
     assert 'return `/?provider=${publicType}&view=tasks`' in shell_js
+    assert 'return `/settings?provider=${publicType}`' in shell_js
     assert 'document.body.dataset.paylinkSection = state.activeSection' in shell_js
     assert "function revealTab(container, tab)" in shell_js
     assert "scrollIntoView" not in shell_js
@@ -129,11 +137,33 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
     assert '[data-paylink-section="tasks"] .control-column' in shell_css
 
 
+def test_proxy_configuration_page_and_routes_exist():
+    settings = read_public_asset("settings.html")
+    settings_js = read_public_asset("assets/settings.js")
+    route_paths = {route.path for route in app.app.routes}
+
+    assert Path(app.SETTINGS_PAGE).exists()
+    assert "/settings" in route_paths
+    assert "/api/config/proxy" in route_paths
+    assert "/api/config/proxy/test" in route_paths
+    assert "/assets/app-shell.css?v=20260809-shell4" in settings
+    assert "/assets/app-shell.js?v=20260809-shell4" in settings
+    assert "/assets/settings.js" in settings
+    assert 'fetch(`/api/config/proxy?provider=${encodeURIComponent(provider)}`' in settings_js
+    assert 'fetch("/api/config/proxy",' in settings_js
+    assert 'fetch("/api/config/proxy/test",' in settings_js
+
+
 def test_home_and_debug_pages_accept_public_provider_query_values():
     home = read_public_asset("index.html")
     debug = read_public_asset("debug-generate.html")
 
     assert '<option value="ideal">荷兰 iDEAL（NL / EUR）</option>' in home
+    assert '<option value="gcash">菲律宾 GCash（PH / PHP）</option>' in home
+    assert '<option value="paypal">美国 PayPal（US / USD）</option>' in home
+    assert 'gcash: {' in home
+    assert 'paypal: {' in home
+    assert 'paypal:["US","en"]' in debug
     assert 'requested === "kakao_pay" ? "korea" : requested' in home
     assert 'requested === "kakao_pay" ? "korea" : requested' in debug
     assert 'new CustomEvent("paylink:provider-change"' in home
@@ -298,7 +328,7 @@ def test_provider_metadata_route_returns_enabled_registry_entries():
 
     assert response.status_code == 200
     assert payload["ok"] is True
-    assert [item["public_type"] for item in payload["providers"]] == ["pix", "upi", "kakao_pay", "ideal"]
+    assert [item["public_type"] for item in payload["providers"]] == ["pix", "upi", "kakao_pay", "ideal", "gcash", "paypal"]
 
 
 def test_debug_generate_page_requires_admin_auth(monkeypatch):

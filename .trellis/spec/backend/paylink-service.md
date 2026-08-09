@@ -13,7 +13,7 @@
 
 ```text
 POST /api/extract
-  request:  { "token": string, "link_type": "pix" | "upi" | "kakao_pay" | "ideal" }
+  request:  { "token": string, "link_type": "pix" | "upi" | "kakao_pay" | "ideal" | "gcash" | "paypal" }
   response: { "ok": true, "job_id": string }
 
 GET /api/jobs/{job_id}/events
@@ -32,8 +32,28 @@ GET /api/providers
     }]
   }
 
+GET /api/tasks?provider=<public_type>
+  response: provider-filtered task snapshots, including failed tasks
+  task item: { "link_type": <native_type>, ... }
+
 GET /?provider=<public_type>&view=tasks
   response: the maintained home console with its existing task workspace active
+
+GET /settings?provider=<public_type>
+  response: administrator-only proxy configuration page for the selected public provider
+
+GET /api/config/proxy?provider=<public_type>
+  response: { "ok": true, "config": { provider, fallback, pool } }
+  fallback: { env_key, configured, masked_value }
+  pool: { env_key, configured, count, masked_values }
+
+PUT /api/config/proxy
+  request:  { "provider": string, "fallbackProxy"?: string, "proxyPool"?: string }
+  response: { "ok": true, "config": <masked projection> }
+
+POST /api/config/proxy/test
+  request:  { "provider": string }
+  response: { "ok": boolean, "provider": string, "duration_ms": integer, "message": string }
 
 payment_page_terminal_failure(payload: object) -> string
   response: empty for non-terminal states; otherwise a redacted state/error summary
@@ -52,12 +72,32 @@ endpoint.
   registry order and is the only provider catalog consumed by the console.
 - Secrets and proxy credentials come from `services/paylink/.env`; they are
   redacted before logs and progress snapshots are persisted.
+- The administrator-only `/settings` page keeps the shared global shell and
+  registry-backed provider tabs. It returns only `env_key`, configured state,
+  and pool count; proxy URLs and credentials never return to the page after
+  load or save.
+- Proxy configuration maps every public provider to a dedicated fallback/pool
+  environment-key pair. `PUT /api/config/proxy` validates changed values,
+  preserves unrelated `.env` lines, atomically replaces that file, and updates
+  the current process. Omitted fields stay unchanged; selected empty fields
+  clear their setting.
+- `POST /api/config/proxy/test` uses only a configured dedicated candidate for
+  that provider against a neutral IP-echo target. It does not select a generic
+  fallback, create Checkout state, or report the tested proxy value.
 - Checkout HTTP errors are stored only as compact summaries: HTML bodies record
   the HTTP status and `HTML response`, while JSON bodies are redacted and
   bounded. Raw provider response bodies must not enter exceptions, task
   snapshots, events, or logs.
 - Checkout and provider stages use region-scoped proxy pools. The first-release
-  route is PIX `BR -> VN -> BR`, UPI `IN`, Kakao Pay `KR`, and iDEAL `NL`.
+  route is PIX `BR -> VN -> BR`, UPI `IN`, Kakao Pay `KR`, iDEAL `NL`, and
+  GCash `PH`. GCash reads `OPENAI_PAY_PH_PROXY` and
+  `OPENAI_PAY_PH_PROXY_POOL` before generic fallbacks; it must not reuse the
+  GoPay pool.
+- PayPal is a standard US Checkout-link Provider. It reads
+  `OPENAI_PAY_PAYPAL_PROXY` and `OPENAI_PAY_PAYPAL_PROXY_POOL` before generic
+  US Checkout candidates, verifies that the Checkout lists `paypal`, and
+  returns only the Checkout URL. It does not create a Stripe payment method,
+  submit a payment, or allocate a provider-pending queue record.
   Pool values are comma- or semicolon-separated URLs and must remain only in
   `.env`; tests use fixture proxy URLs.
 - Checkout creation may rotate to the next regional proxy after a challenge or
@@ -86,6 +126,10 @@ endpoint.
 - Provider navigation preserves the active `view`. For example, switching from
   UPI Tasks to Kakao Pay yields `/?provider=kakao_pay&view=tasks` while the
   native home selector receives `korea`.
+- Each task snapshot persists its native `link_type` when the job is created.
+  `GET /api/tasks` resolves an optional public `provider` through the registry
+  before filtering and paginating, so a failed task remains in its originating
+  provider tab even when it has no terminal result payload.
 - Every `text/html` response carries `Cache-Control: no-store, max-age=0`,
   `Pragma: no-cache`, and `Expires: 0`. Static `/assets/*` responses are not
   modified by this HTML middleware.
@@ -112,7 +156,13 @@ endpoint.
 | Legacy `#tasks` is present | The home console renders the existing Tasks view for compatibility. |
 | HTML route response | Cache-prevention headers are added before the response is returned. |
 | Static asset response | HTML cache middleware leaves its cache headers unchanged. |
+| Unsupported proxy-config provider | Configuration API returns HTTP 400. |
+| No changed proxy-config field | `PUT /api/config/proxy` returns HTTP 400 without writing `.env`. |
+| Invalid proxy input | `PUT /api/config/proxy` returns HTTP 400 and leaves `.env` unchanged. |
+| No dedicated Provider proxy | `POST /api/config/proxy/test` returns HTTP 400; it must not test a generic proxy. |
+| IP-echo transport failure | Test returns `{ ok: false }` with a credential-free error class. |
 | Checkout challenge or transport failure | Rotate through at most `MAX_CHECKOUT_PROXY_ATTEMPTS` candidates from the same provider region. |
+| PayPal absent from Checkout methods | Return HTTP 409 before a successful facade result is persisted. |
 | Stripe `submission_attempt.state` is `failed`, `canceled`, or `expired` | Return HTTP 502 immediately with a redacted state/error summary. |
 | UPI terminal failure after approval | Classify it as `confirm-failed`; do not wait for the QR-resolution timeout. |
 
@@ -120,10 +170,18 @@ endpoint.
 
 - Good: `kakao_pay` is enabled and returns one normalized `result` event then
   one `done` event.
+- Good: `gcash` is enabled, creates native `gcash` requests with PH/PHP
+  billing, and routes pending sessions to `/ph-qr`.
+- Good: `paypal` is enabled, creates a US/en Checkout, returns a normalized
+  PayPal Checkout URL, and its queue tab routes to `view=tasks`.
+- Good: GCash config shows `OPENAI_PAY_PH_PROXY_POOL` and a pool count without
+  exposing any configured entry, then writes validated replacements atomically.
 - Base: a client only configures `EXTRACT_LINK_API_BASE` and receives normal
   progress events.
 - Bad: route handlers map public provider aliases locally or place proxy
   credentials in `providers.ini`.
+- Bad: loading a raw proxy URL into a configuration form, logging it, or
+  testing a generic fallback when the selected provider has no dedicated proxy.
 - Good: adding an enabled provider registry entry with a queue route makes it
   appear in the shared second-level navigation without editing every HTML page.
 - Base: `/debug-generate?provider=kakao_pay` selects native `korea` while the
@@ -146,8 +204,8 @@ endpoint.
 
 ### 6. Tests Required
 
-- Registry tests assert all four public names resolve and `kakao_pay` resolves
-  to `korea`.
+- Registry tests assert all five public names resolve, `kakao_pay` resolves to
+  `korea`, and `gcash` resolves to native `gcash` with `PH` / `en-PH`.
 - A disabled provider test asserts no job is started.
 - Facade lifecycle tests assert a single terminal result sequence and absence
   of the supplied access token from saved state and logs.
@@ -164,6 +222,9 @@ endpoint.
   debug pages translate the public `kakao_pay` query value.
 - Home-view tests assert Tasks links use `view=tasks`, Generate and Tasks hide
   opposite sections, and provider links preserve the active view.
+- Task-list tests assert provider filtering occurs before summary and pagination,
+  includes failed snapshots, and can infer the public Kakao Pay alias from a
+  legacy facade result that lacks the persisted field.
 - Cache tests call the HTML middleware with both `text/html` and static media
   types, asserting all three no-store headers only on the HTML response.
 - Shared-shell tests assert every operator page uses the same asset version and
@@ -171,8 +232,18 @@ endpoint.
 - Browser verification covers desktop and 390px widths, active states,
   generation/debug/queue routing, internal horizontal scrolling, document
   width, and console errors.
-- Proxy tests assert PIX uses BR/VN, UPI uses IN, Kakao Pay uses KR, and iDEAL
-  uses NL without including live proxy hosts or credentials.
+- Proxy tests assert PIX uses BR/VN, UPI uses IN, Kakao Pay uses KR, iDEAL
+  uses NL, and GCash prefers its dedicated PH pool without including live
+  proxy hosts or credentials.
+- PayPal tests assert registry country/locale, dedicated US proxy precedence,
+  masked configuration, task filtering, and HTTP 409 when Checkout methods do
+  not include `paypal`.
+- Tests that patch one proxy selection path must explicitly clear every more
+  specific pool used by that path. Module globals load `.env` at import time,
+  so a local configured pool must never influence a fixture assertion.
+- Proxy-configuration tests assert masked reads, atomic `.env` writes that
+  preserve unrelated lines, runtime updates, invalid-input rollback, and
+  credential-free dedicated IP-echo testing.
 - Payment-page tests assert terminal failure extraction keeps the nested Stripe
   error code, raises HTTP 502 on the first poll, and classifies UPI as
   `confirm-failed`.
@@ -198,8 +269,23 @@ must remain a simple submit-and-consume consumer.
 
 #### Wrong
 
+```python
+return {"proxy": os.getenv("OPENAI_PAY_PH_PROXY", "")}
+```
+
+#### Correct
+
+```python
+return {"configured": bool(value), "env_key": "OPENAI_PAY_PH_PROXY"}
+```
+
+The configuration boundary receives raw values only on a changed `PUT` field;
+read, save, test, and log projections stay credential-free.
+
+#### Wrong
+
 ```javascript
-const providers = ["pix", "upi", "kakao_pay", "ideal"];
+const providers = ["pix", "upi", "kakao_pay", "ideal", "gcash"];
 ```
 
 #### Correct
@@ -246,3 +332,23 @@ if terminal_failure:
 Stripe terminal states are business outcomes, not proxy failures. Preserve the
 redacted failure code and stop polling; only Checkout challenge/transport
 failures rotate regional proxy candidates.
+
+#### Wrong
+
+```python
+monkeypatch.setattr(app, "PROVIDER_PROXY_POOL", [fixture_proxy])
+assert app.proxy_candidates_for_link_type("", "ideal") == [fixture_proxy]
+```
+
+#### Correct
+
+```python
+monkeypatch.setattr(app, "IDEAL_PROXY_POOL", [])
+monkeypatch.setattr(app, "IDEAL_STAGE_PROXY", "")
+monkeypatch.setattr(app, "PROVIDER_PROXY_POOL", [fixture_proxy])
+assert app.proxy_candidates_for_link_type("", "ideal") == [fixture_proxy]
+```
+
+Provider-specific pools take precedence over generic pools. Tests must reset
+both dedicated values so machine-local `.env` configuration cannot change the
+asserted candidate order.

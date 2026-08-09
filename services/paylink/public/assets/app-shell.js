@@ -13,6 +13,7 @@
     "/in-qr": "upi",
     "/kr-qr": "kakao_pay",
     "/nl-qr": "ideal",
+    "/ph-qr": "gcash",
   };
   const GLOBAL_ITEMS = [
     ["generate", "生成中心"],
@@ -20,6 +21,7 @@
     ["queues", "支付队列"],
     ["debug", "调试工具"],
     ["stats", "运行统计"],
+    ["settings", "配置"],
   ];
 
   const state = {
@@ -38,7 +40,8 @@
     const path = window.location.pathname;
     if (path === "/debug-generate") return "debug";
     if (path === "/stats") return "stats";
-    if (["/qr", "/kr-qr", "/ch-qr", "/in-qr", "/nl-qr", "/id-qr"].includes(path)) return "queues";
+    if (path === "/settings") return "settings";
+    if (["/qr", "/kr-qr", "/ch-qr", "/in-qr", "/nl-qr", "/ph-qr", "/id-qr"].includes(path)) return "queues";
     const requestedView = new URLSearchParams(window.location.search).get("view");
     if ((path === "/" && requestedView === "tasks") || window.location.hash === "#tasks") return "tasks";
     if (["/upi/tasks", "/upi/logs", "/upi/result"].includes(path)) return "tasks";
@@ -63,6 +66,7 @@
     if (section === "queues") return provider && provider.queue_path ? provider.queue_path : "/qr";
     if (section === "debug") return `/debug-generate?provider=${publicType}`;
     if (section === "stats") return `/stats?provider=${publicType}`;
+    if (section === "settings") return `/settings?provider=${publicType}`;
     return `/?provider=${publicType}`;
   }
 

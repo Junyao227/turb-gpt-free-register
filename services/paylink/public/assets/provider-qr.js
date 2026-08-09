@@ -10,7 +10,9 @@ const LINK_TYPE =
         ? "upi"
         : PROVIDER_PAGE === "ideal"
           ? "ideal"
-        : PROVIDER_PAGE === "gopay"
+          : PROVIDER_PAGE === "gcash"
+            ? "gcash"
+          : PROVIDER_PAGE === "gopay"
           ? "gopay"
           : "";
 const REFRESH_INTERVAL_MS = 30000;
@@ -48,6 +50,7 @@ function resolveTitle() {
   if (LINK_TYPE === "swiss") return "瑞士支付队列";
   if (LINK_TYPE === "upi") return "OPLL-UPI · IN-QR";
   if (LINK_TYPE === "ideal") return "荷兰 iDEAL 队列";
+  if (LINK_TYPE === "gcash") return "菲律宾 GCash 队列";
   if (LINK_TYPE === "gopay") return "印度尼西亚 GoPay 队列";
   return "Provider 支付队列";
 }
@@ -57,6 +60,7 @@ function resolveOpenLabel() {
   if (LINK_TYPE === "swiss") return "Open Swiss payment page";
   if (LINK_TYPE === "upi") return "Open UPI payment page";
   if (LINK_TYPE === "ideal") return "Open iDEAL payment page";
+  if (LINK_TYPE === "gcash") return "Open GCash payment page";
   if (LINK_TYPE === "gopay") return "Open GoPay payment page";
   return "Open payment page";
 }

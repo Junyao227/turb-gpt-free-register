@@ -9,6 +9,8 @@ operator console and adds a compatibility API for the registration project.
 - `upi`
 - `kakao_pay` (implemented by OPLL2's native `korea` provider)
 - `ideal`
+- `gcash` (native `gcash`, PH / PHP)
+- `paypal` (standard Checkout link, US / USD)
 
 Provider switches and their non-secret country/locale settings are in
 `config/providers.ini`. Keep proxy credentials and other secrets in `.env`;

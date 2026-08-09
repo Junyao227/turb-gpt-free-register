@@ -42,6 +42,8 @@ def _event_data(value: str) -> dict:
         ("upi", "upi", "IN", "en"),
         ("kakao_pay", "korea", "KR", "ko"),
         ("ideal", "ideal", "NL", "nl"),
+        ("gcash", "gcash", "PH", "en-PH"),
+        ("paypal", "paypal", "US", "en"),
     ],
 )
 def test_registry_resolves_first_release_providers(public_type, native_type, country, locale):
@@ -55,9 +57,9 @@ def test_registry_resolves_first_release_providers(public_type, native_type, cou
 def test_enabled_provider_metadata_exposes_console_routes():
     providers = enabled_provider_metadata()
 
-    assert [item["public_type"] for item in providers] == ["pix", "upi", "kakao_pay", "ideal"]
-    assert [item["display_name"] for item in providers] == ["PIX", "UPI", "Kakao Pay", "iDEAL"]
-    assert [item["queue_path"] for item in providers] == ["/qr", "/in-qr", "/kr-qr", "/nl-qr"]
+    assert [item["public_type"] for item in providers] == ["pix", "upi", "kakao_pay", "ideal", "gcash", "paypal"]
+    assert [item["display_name"] for item in providers] == ["PIX", "UPI", "Kakao Pay", "iDEAL", "GCash", "PayPal"]
+    assert [item["queue_path"] for item in providers] == ["/qr", "/in-qr", "/kr-qr", "/nl-qr", "/ph-qr", "/?provider=paypal&view=tasks"]
     assert providers[2]["native_type"] == "korea"
 
 
@@ -81,13 +83,21 @@ locale = ko
 enabled = true
 country = NL
 locale = nl
+[providers.gcash]
+enabled = true
+country = PH
+locale = en-PH
+[providers.paypal]
+enabled = true
+country = US
+locale = en
 """.strip(),
         encoding="utf-8",
     )
 
     providers = enabled_provider_metadata(config_path)
 
-    assert [item["public_type"] for item in providers] == ["pix", "kakao_pay", "ideal"]
+    assert [item["public_type"] for item in providers] == ["pix", "kakao_pay", "ideal", "gcash", "paypal"]
 
 
 def test_disabled_provider_is_rejected_before_job_creation(tmp_path):
@@ -99,6 +109,17 @@ def test_disabled_provider_is_rejected_before_job_creation(tmp_path):
 
     with pytest.raises(ProviderConfigError, match="disabled"):
         resolve_provider("pix", config_path)
+
+
+def test_disabled_paypal_provider_is_rejected_before_job_creation(tmp_path):
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        "[providers.paypal]\nenabled = false\ncountry = US\nlocale = en\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProviderConfigError, match="disabled"):
+        resolve_provider("paypal", config_path)
 
 
 def test_unknown_provider_is_rejected():
@@ -159,6 +180,7 @@ def test_facade_emits_one_result_then_done_without_persisting_access_token():
     assert captured_requests[0]["link_type"] == "upi"
     assert captured_requests[0]["billing_country"] == "IN"
     assert captured_requests[0]["accessToken"] == "access-token-123"
+    assert store.snapshots[job_id]["link_type"] == "upi"
     assert "access-token-123" not in json.dumps(store.snapshots)
     assert all("access-token-123" not in str(item) for item in logs)
     assert [_event_name(item) for item in events][-2:] == ["result", "done"]
@@ -166,6 +188,71 @@ def test_facade_emits_one_result_then_done_without_persisting_access_token():
     assert result["payment_link_type"] == "upi"
     assert result["copy_paste"] == "upi://pay?pa=merchant@example.test"
     assert result["expires_at"] == 123
+
+
+def test_facade_gcash_job_uses_native_ph_request_and_persists_public_type():
+    store = ProgressStore()
+    captured_requests = []
+
+    def request_factory(**kwargs):
+        captured_requests.append(dict(kwargs))
+        return kwargs
+
+    facade = CompatibilityFacade(
+        request_factory=request_factory,
+        generate_core=lambda _request: {
+            "long_url": "https://payments.example.test/gcash",
+            "provider_redirect_url": "https://payments.example.test/gcash",
+            "payment_method_type": "gcash",
+        },
+        set_progress=store.set_progress,
+        get_progress=store.get_progress,
+        log_event=lambda *_args, **_kwargs: None,
+    )
+
+    job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="gcash"))
+    events = list(facade.iter_events(job_id))
+
+    assert captured_requests[0]["link_type"] == "gcash"
+    assert captured_requests[0]["billing_country"] == "PH"
+    assert captured_requests[0]["payment_locale"] == "en-PH"
+    assert store.snapshots[job_id]["link_type"] == "gcash"
+    result = _event_data(events[-2])["result"]
+    assert result["payment_link_type"] == "gcash"
+    assert result["payment_method"] == "gcash"
+
+
+def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result():
+    store = ProgressStore()
+    captured_requests = []
+
+    def request_factory(**kwargs):
+        captured_requests.append(dict(kwargs))
+        return kwargs
+
+    facade = CompatibilityFacade(
+        request_factory=request_factory,
+        generate_core=lambda _request: {
+            "checkout_url": "https://checkout.example.test/paypal",
+            "long_url": "https://checkout.example.test/paypal",
+            "payment_method_type": "paypal",
+        },
+        set_progress=store.set_progress,
+        get_progress=store.get_progress,
+        log_event=lambda *_args, **_kwargs: None,
+    )
+
+    job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="paypal"))
+    events = list(facade.iter_events(job_id))
+
+    assert captured_requests[0]["link_type"] == "paypal"
+    assert captured_requests[0]["billing_country"] == "US"
+    assert captured_requests[0]["payment_locale"] == "en"
+    assert store.snapshots[job_id]["link_type"] == "paypal"
+    result = _event_data(events[-2])["result"]
+    assert result["long_url"] == "https://checkout.example.test/paypal"
+    assert result["payment_link_type"] == "paypal"
+    assert result["payment_method"] == "paypal"
 
 
 def test_normalize_result_falls_back_to_checkout_url():

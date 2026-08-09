@@ -73,6 +73,9 @@ def _normalize_task_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "created_at": created_at,
         "updated_at": updated_at,
     }
+    link_type = str(snapshot.get("link_type") or "").strip().lower()
+    if link_type:
+        normalized["link_type"] = link_type
     result = snapshot.get("result")
     if isinstance(result, dict):
         normalized["result"] = result

@@ -104,7 +104,14 @@ class CompatibilityFacade:
     def create_job(self, request: ExtractRequest) -> str:
         provider = self._provider_resolver(request.link_type)
         job_id = uuid.uuid4().hex
-        self._set_progress(job_id, percent=1, text="Paylink job created", done=False, error=False)
+        self._set_progress(
+            job_id,
+            percent=1,
+            text="Paylink job created",
+            done=False,
+            error=False,
+            link_type=provider.definition.native_type,
+        )
         with self._lock:
             self._running_jobs.add(job_id)
         worker = threading.Thread(

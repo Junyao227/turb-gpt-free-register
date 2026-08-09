@@ -61,6 +61,7 @@ def test_provider_page_path_for_link_types():
     assert app.provider_page_path_for_link_type("swiss") == "/ch-qr"
     assert app.provider_page_path_for_link_type("upi") == "/in-qr"
     assert app.provider_page_path_for_link_type("ideal") == "/nl-qr"
+    assert app.provider_page_path_for_link_type("gcash") == "/ph-qr"
     assert app.provider_page_path_for_link_type("pix") == "/qr"
 
 
@@ -121,6 +122,11 @@ def test_upi_line_mapping():
     assert app.browser_timezone_for_link_type("upi") == "Asia/Kolkata"
 
 
+def test_kakao_pay_alias_maps_to_korea():
+    assert app.normalize_link_type("kakao_pay") == "korea"
+    assert app.normalize_link_type("kakaopay") == "korea"
+
+
 def test_gopay_line_mapping():
     req = app.LongLinkRequest(link_type="gopay", billing_country="US", payment_locale="en")
 
@@ -140,6 +146,51 @@ def test_gcash_line_mapping():
     assert app.effective_country(req) == "PH"
     assert app.effective_payment_locale("gcash", req.payment_locale) == "en-PH"
     assert app.browser_timezone_for_link_type("gcash") == "Asia/Manila"
+
+
+def test_paypal_line_mapping_and_checkout_availability_failure():
+    req = app.LongLinkRequest(link_type="paypal", billing_country="PH", payment_locale="en-PH")
+
+    assert app.normalize_link_type("pp") == "paypal"
+    assert app.payment_method_type_for_link_type("paypal") == "paypal"
+    assert app.effective_country(req) == "US"
+    assert app.effective_payment_locale("paypal", req.payment_locale) == "en"
+
+    response = SimpleNamespace(
+        status_code=200,
+        text="",
+        headers={},
+        json=lambda: {"payment_method_types": ["gcash"]},
+    )
+    with pytest.raises(HTTPException, match="paypal line is unavailable.*gcash"):
+        app.parse_checkout_response(response, req)
+
+
+def test_paypal_core_returns_standard_checkout_without_provider_submission(monkeypatch):
+    checkout = {
+        "cs_id": "cs_test_paypal_1",
+        "processor_entity": "openai_llc",
+        "checkout_url": "https://checkout.example.test/paypal",
+        "billing_country": "US",
+        "currency": "USD",
+        "publishable_key": "pk_test",
+    }
+
+    monkeypatch.setattr(app, "maybe_claim_zc_account", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(app, "create_checkout_with_proxy_retry", lambda _req: (checkout, object()))
+    monkeypatch.setattr(app, "set_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(app, "provider_stage_proxy", lambda _req: pytest.fail("PayPal must not start a provider stage"))
+
+    result = app.generate_long_link_core(
+        app.LongLinkRequest(link_type="paypal", billing_country="PH", payment_locale="en-PH", job_id="paypal-core-test")
+    )
+
+    assert result.link_type == "paypal"
+    assert result.billing_country == "US"
+    assert result.payment_locale == "en-US"
+    assert result.payment_method_type == "paypal"
+    assert result.long_url == checkout["checkout_url"]
 
 
 def test_grabpay_line_mapping():
@@ -243,6 +294,30 @@ def test_gopay_provider_session_roundtrip(tmp_path, monkeypatch):
     assert items[0]["csId"] == "cs_test_gopay_1"
     assert items[0]["linkType"] == "gopay"
     assert app.get_provider_pending_session("gopay", "cs_test_gopay_1") is not None
+
+
+def test_gcash_provider_session_roundtrip_and_queue_api(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "RUNTIME_DIR", tmp_path)
+    monkeypatch.delenv("OPLL_QR_PASSWORD", raising=False)
+    monkeypatch.delenv("OPLL_AUTH_SECRET", raising=False)
+
+    app.save_provider_pending_session(
+        {
+            "csId": "cs_test_gcash_1",
+            "linkType": "gcash",
+            "providerRedirectUrl": "https://payments.example.test/gcash/session",
+            "longUrl": "https://payments.example.test/gcash/session",
+            "state": "pending",
+        }
+    )
+
+    items = app.list_provider_pending_sessions("gcash", limit=20)
+    payload = app.provider_pending(request_for("/api/provider/pending"), link_type="gcash", limit=20)
+
+    assert items[0]["csId"] == "cs_test_gcash_1"
+    assert items[0]["linkType"] == "gcash"
+    assert payload["items"][0]["csId"] == "cs_test_gcash_1"
+    assert app.get_provider_pending_session("gcash", "cs_test_gcash_1") is not None
 
 
 def test_progress_snapshot_marks_gopay_blocked_as_failed():
