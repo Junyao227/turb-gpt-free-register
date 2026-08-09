@@ -20,7 +20,6 @@ from urllib.parse import urlparse
 from flask import Flask, Response, jsonify, make_response, render_template, request
 
 from core import codex_retry_service, db, plan_check_service, extract_link_service, codex_agent_service, live_check_service
-from config.proxy import proxy_display_label
 from webui.auth import init_auth, register_auth_routes
 from core import registration_service as svc
 from webui import config_editor
@@ -102,13 +101,6 @@ def _compact_account_for_list(row: dict) -> dict:
     ):
         if key in row:
             out[key] = row.get(key)
-
-    if "proxy_used" in row:
-        proxy_used = str(row.get("proxy_used") or "").strip()
-        if proxy_used.startswith(("browser_use:", "skyvern:")):
-            out["proxy_used"] = proxy_used
-        else:
-            out["proxy_used"] = proxy_display_label(proxy_used)
 
     if row.get("plan_check_status") in ("queued", "running") or row.get("plan_check_ok") is False:
         out["plan_check_ok"] = row.get("plan_check_ok")

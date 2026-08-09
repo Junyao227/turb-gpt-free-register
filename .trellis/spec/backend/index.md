@@ -19,7 +19,6 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-| [Ant Browser Driver](./ant-browser-driver.md) | Local profile Launch API and Selenium CDP contract | Active |
 | [Paylink Service Contract](./paylink-service.md) | Local OPLL2 facade, provider registry, and SSE integration | Active |
 
 ---

@@ -737,7 +737,6 @@
     .accounts-table-v2 .col-id { width: 72px; }
     .accounts-table-v2 .col-email { width: 240px; }
     .accounts-table-v2 .col-source { width: 90px; }
-    .accounts-table-v2 .col-proxy { width: 140px; }
     .accounts-table-v2 .col-token { width: 100px; }
     .accounts-table-v2 .col-plan { width: 120px; }
     .accounts-table-v2 .col-note { width: 140px; }
@@ -2233,7 +2232,7 @@
       <div class="accounts-table-v2-wrap">
         <table class="accounts-table-v2">
           <colgroup>
-            <col class="col-check"><col class="col-id"><col class="col-email"><col class="col-source"><col class="col-proxy">
+            <col class="col-check"><col class="col-id"><col class="col-email"><col class="col-source">
             <col class="col-token"><col class="col-plan"><col class="col-note"><col class="col-small">
             <col class="col-status"><col class="col-agent"><col class="col-time"><col class="col-actions">
           </colgroup>
@@ -2243,7 +2242,6 @@
               <th class="col-id">ID</th>
               <th class="col-email">邮箱</th>
               <th class="col-source">来源</th>
-              <th class="col-proxy">注册节点</th>
               <th class="col-token">Token</th>
               <th class="col-plan">套餐</th>
               <th class="col-note">备注</th>
@@ -3494,7 +3492,6 @@ function renderAccounts() {
         <div class="acc-v2-sub">${esc(r.user_name || '-')}</div>
       </td>
       <td class="col-source">${esc(r.email_source || '-')}</td>
-      <td class="col-proxy" title="${esc(r.proxy_used || '')}">${esc(r.proxy_used || '-')}</td>
       <td class="col-token">${_tokenCellV2(r)}</td>
       <td class="col-plan">${_planCell(r)}<div class="acc-v2-sub">${_extractLinkCell(r)}</div></td>
       <td class="col-note" title="${esc(r.note || '')}">${r.note ? esc(short(r.note, 80)) : '<span class="acc-v2-muted">-</span>'}</td>
@@ -3515,7 +3512,7 @@ function renderAccounts() {
 
   const bodyV2 = $('#accountsBodyV2');
   if (bodyV2) {
-    bodyV2.innerHTML = rows.map(rowHtmlV2).join('') || '<tr><td colspan="13" style="text-align:center;color:#909399;padding:28px;">暂无账号</td></tr>';
+    bodyV2.innerHTML = rows.map(rowHtmlV2).join('') || '<tr><td colspan="12" style="text-align:center;color:#909399;padding:28px;">暂无账号</td></tr>';
   }
   updateAccountSelectionUi(rows);
   _renderPager('accounts', total);
@@ -5719,7 +5716,6 @@ function registrationDriverChoices() {
     { value: 'protocol', label: '纯协议注册' },
     { value: 'roxy', label: 'RoxyBrowser' },
     { value: 'cloak', label: '本地指纹浏览器' },
-    { value: 'ant_browser', label: 'Ant Browser' },
     { value: 'browser_use', label: 'browser_use' },
     { value: 'skyvern', label: 'skyvern' },
   ];

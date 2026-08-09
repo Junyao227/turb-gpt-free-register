@@ -51,7 +51,7 @@ EDITABLE_FIELDS = [
     },
     {
         "key": "REGISTRATION_DRIVER", "file": "roxybrowser.py", "type": "str", "group": "注册方式",
-        "label": "注册驱动", "help": "默认推荐 roxy；protocol=纯协议；roxy=RoxyBrowser；cloak=CloakBrowser；ant_browser=Ant Browser 本地 Profile；browser_use=Browser Use Cloud+Playwright；skyvern=Skyvern Browser Sessions+Playwright",
+        "label": "注册驱动", "help": "默认推荐 roxy；protocol=纯协议，容易封号不建议；roxy=RoxyBrowser；cloak=CloakBrowser；browser_use=Browser Use Cloud+Playwright；skyvern=Skyvern Browser Sessions+Playwright",
     },
 
     # ---- CloakBrowser ----
@@ -98,45 +98,6 @@ EDITABLE_FIELDS = [
     {
         "key": "CLOAK_KEEP_BROWSER_OPEN", "file": "cloakbrowser.py", "type": "bool", "group": "CloakBrowser",
         "label": "保留Cloak浏览器", "help": "调试时开启，任务结束后不自动关闭",
-    },
-
-    # ---- Ant Browser ----
-    {
-        "key": "ANT_BROWSER_API_BASE", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
-        "label": "Ant API 地址", "help": "Ant Browser LaunchServer 地址，默认 http://127.0.0.1:19876",
-    },
-    {
-        "key": "ANT_BROWSER_API_KEY", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
-        "label": "Ant API Key", "help": "可选；保存到 .env，不写回 config/*.py",
-        "storage": "env", "secret": True,
-    },
-    {
-        "key": "ANT_BROWSER_API_KEY_HEADER", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
-        "label": "Ant Key 请求头", "help": "默认 X-Ant-Api-Key；需与 Ant Browser Launch API 设置一致",
-    },
-    {
-        "key": "ANT_BROWSER_PROFILE_MODE", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
-        "label": "Ant Profile 模式", "help": "managed=每个注册任务自动创建、启动和清理 Profile；existing=使用下面指定的已有 Profile",
-    },
-    {
-        "key": "ANT_BROWSER_PROFILE_ID", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
-        "label": "Ant Profile ID", "help": "仅 existing 模式必填；managed 模式忽略此项并为每个任务创建独立 Profile",
-    },
-    {
-        "key": "ANT_BROWSER_START_TIMEOUT", "file": "ant_browser.py", "type": "int", "group": "Ant Browser",
-        "label": "Ant 启动超时", "help": "启动 Profile 和连接 Selenium 的最长秒数",
-    },
-    {
-        "key": "ANT_BROWSER_KEEP_BROWSER_OPEN", "file": "ant_browser.py", "type": "bool", "group": "Ant Browser",
-        "label": "保留 Ant 浏览器", "help": "开启后任务结束不停止或删除托管 Profile，便于调试；existing 模式的手动实例默认不会停止",
-    },
-    {
-        "key": "ANT_BROWSER_DELETE_MANAGED_PROFILE", "file": "ant_browser.py", "type": "bool", "group": "Ant Browser",
-        "label": "删除托管 Ant Profile", "help": "仅 managed 模式生效；关闭时任务结束仅停止实例并保留 Profile，默认开启",
-    },
-    {
-        "key": "ANT_BROWSER_START_URL", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
-        "label": "Ant 起始 URL", "help": "注册流程进入的页面，默认 ChatGPT 登录页",
     },
 
     # ---- Browser Use Cloud ----

@@ -11,8 +11,7 @@
 """
 from config.env_loader import apply_env_overrides
 import random
-import re
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, urlsplit
 
 
 # 本地代理入口；实际出口地区以代理/分流规则为准。
@@ -105,48 +104,6 @@ def normalize_proxy_url(value: str, *, default_scheme: str = "http") -> str:
     if not 1 <= port <= 65535:
         raise ValueError("代理端口超出 1-65535")
     return normalized
-
-
-def mask_proxy_url(value: str) -> str:
-    """Return a display-safe proxy URL without username or password."""
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        normalized = normalize_proxy_url(text)
-        parsed = urlsplit(normalized)
-        host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
-        auth = "***:***@" if parsed.username or parsed.password else ""
-        return f"{parsed.scheme}://{auth}{host}{port}" or "***"
-    except (TypeError, ValueError):
-        return "***"
-
-
-def proxy_display_label(value: str) -> str:
-    """Return a concise provider/region label when the proxy format is known."""
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        normalized = normalize_proxy_url(text)
-        parsed = urlsplit(normalized)
-    except (TypeError, ValueError):
-        return "***"
-
-    host = str(parsed.hostname or "").lower()
-    if host == "kookeey.info" or host.endswith(".kookeey.info"):
-        password = unquote(parsed.password or "")
-        match = re.search(r"(?:^|[-_])(?:country|region)[-_]([a-z]{2})(?=[-_]|$)", password, re.I)
-        if match:
-            country = match.group(1).lower()
-        else:
-            parts = re.split(r"[-_]", password)
-            candidate = parts[1] if len(parts) > 1 else ""
-            country = candidate.lower() if re.fullmatch(r"[a-z]{2}", candidate, re.I) else ""
-        return f"kookeey-{country}" if country else "kookeey"
-
-    return mask_proxy_url(normalized)
 
 
 def pick_proxy() -> str:
