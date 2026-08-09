@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPLL-UPI · Generate</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/assets/upi.css?v=20260623-upi" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body data-page="generate">
+    <main class="upi-shell">
+      <header class="upi-header">
+        <div>
+          <div class="upi-kicker">OPLL-UPI</div>
+          <h1>India UPI Generate</h1>
+          <p class="upi-subtitle">独立的 UPI 生成、诊断与成功工单工作台。</p>
+        </div>
+        <nav class="upi-nav">
+          <a class="active" href="/upi">Generate</a>
+          <a href="/upi/tasks">Tasks</a>
+          <a href="/upi/logs">Logs</a>
+          <a href="/upi/result">Result</a>
+          <a href="/in-qr">IN-QR</a>
+        </nav>
+      </header>
+
+      <section class="upi-layout upi-layout-generate">
+        <section class="upi-panel upi-form-panel">
+          <div class="upi-panel-head">
+            <h2>Request</h2>
+            <div id="generateStatus" class="upi-status muted">等待提交</div>
+          </div>
+          <label for="token">AC Token</label>
+          <textarea id="token" placeholder="eyJ..."></textarea>
+          <div class="upi-grid two">
+            <div>
+              <label for="promoId">promoId</label>
+              <input id="promoId" type="text" value="plus-1-month-free" />
+            </div>
+            <div>
+              <label for="poolKeep">poolKeep</label>
+              <input id="poolKeep" type="number" min="1" max="50" value="10" />
+            </div>
+          </div>
+          <div class="upi-grid two">
+            <div>
+              <label for="poolMax">poolMax</label>
+              <input id="poolMax" type="number" min="1" max="2000" value="200" />
+            </div>
+            <div class="upi-button-wrap">
+              <button id="submitGenerate" type="button">开始生成</button>
+              <button id="openLiveLogs" class="secondary" type="button">实时日志</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="upi-panel upi-result-panel">
+          <div class="upi-panel-head">
+            <h2>Result</h2>
+            <div id="resultBadge" class="upi-badge pending">idle</div>
+          </div>
+          <div class="upi-artifact" id="artifactViewport">
+            <div class="muted">等待结果</div>
+          </div>
+          <div class="upi-actions">
+            <a id="openArtifact" class="upi-button disabled" href="#" target="_blank" rel="noopener">打开结果</a>
+            <button id="copyArtifact" class="secondary" type="button">复制结果</button>
+            <a class="secondary upi-button" href="/in-qr">打开 IN-QR</a>
+          </div>
+          <div class="upi-meta-grid">
+            <div class="upi-meta-card"><label>request_id</label><code id="metaRequestId">-</code></div>
+            <div class="upi-meta-card"><label>reason</label><code id="metaReason">-</code></div>
+            <div class="upi-meta-card"><label>retryable</label><code id="metaRetryable">-</code></div>
+            <div class="upi-meta-card"><label>next_action_type</label><code id="metaActionType">-</code></div>
+          </div>
+        </section>
+      </section>
+
+      <section id="logModal" class="cli-modal hidden" aria-hidden="true">
+        <div class="cli-dialog">
+          <div class="cli-head">
+            <div>
+              <div class="cli-title">Live Logs</div>
+              <div id="cliMeta" class="cli-meta">未连接</div>
+            </div>
+            <div class="cli-actions">
+              <button id="toggleAutoscroll" class="secondary" type="button">暂停滚动</button>
+              <button id="closeCli" class="secondary" type="button">关闭</button>
+            </div>
+          </div>
+          <pre id="cliOutput" class="cli-output"></pre>
+        </div>
+      </section>
+
+      <script src="/assets/upi-generate.js?v=20260623-upi"></script>
+    </main>
+  </body>
+</html>

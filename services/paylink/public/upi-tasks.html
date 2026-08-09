@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPLL-UPI · Tasks</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/assets/upi.css?v=20260623-upi" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body data-page="tasks">
+    <main class="upi-shell">
+      <header class="upi-header">
+        <div>
+          <div class="upi-kicker">OPLL-UPI</div>
+          <h1>Task Queue</h1>
+          <p class="upi-subtitle">按原始诊断信息查看 UPI 作业，不再混入其他线路。</p>
+        </div>
+        <nav class="upi-nav">
+          <a href="/upi">Generate</a>
+          <a class="active" href="/upi/tasks">Tasks</a>
+          <a href="/upi/logs">Logs</a>
+          <a href="/upi/result">Result</a>
+          <a href="/in-qr">IN-QR</a>
+        </nav>
+      </header>
+
+      <section class="upi-panel">
+        <div class="upi-panel-head">
+          <h2>Tasks</h2>
+          <div class="upi-actions-inline">
+            <button id="refreshTasks" class="secondary" type="button">刷新</button>
+          </div>
+        </div>
+        <div class="upi-summary-grid">
+          <div class="upi-meta-card"><label>Running</label><code id="sumRunning">0</code></div>
+          <div class="upi-meta-card"><label>Done</label><code id="sumDone">0</code></div>
+          <div class="upi-meta-card"><label>Failed</label><code id="sumFailed">0</code></div>
+          <div class="upi-meta-card"><label>Total</label><code id="sumTotal">0</code></div>
+        </div>
+        <div id="taskTableWrap" class="upi-table-wrap"></div>
+      </section>
+
+      <section id="logModal" class="cli-modal hidden" aria-hidden="true">
+        <div class="cli-dialog cli-dialog-wide">
+          <div class="cli-head">
+            <div>
+              <div id="cliTitle" class="cli-title">Task Logs</div>
+              <div id="cliMeta" class="cli-meta">未选择任务</div>
+            </div>
+            <div class="cli-actions">
+              <button id="refreshLogs" class="secondary" type="button">刷新日志</button>
+              <button id="closeCli" class="secondary" type="button">关闭</button>
+            </div>
+          </div>
+          <pre id="cliOutput" class="cli-output"></pre>
+        </div>
+      </section>
+
+      <script src="/assets/upi-tasks.js?v=20260623-upi"></script>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,70 @@
+:root {
+  --bg: #f3f1ea;
+  --panel: #fbfaf6;
+  --panel-strong: #ffffff;
+  --ink: #161616;
+  --muted: #5c5a54;
+  --line: #ddd6c7;
+  --line-strong: #26231f;
+  --action: #0f766e;
+  --action-strong: #115e59;
+  --success: #2f855a;
+  --warning: #b7791f;
+  --danger: #b42318;
+  --info: #1d4ed8;
+  --terminal: #111111;
+  --terminal-ink: #f4f1e8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.upi-shell { width: min(1440px, calc(100vw - 32px)); margin: 0 auto; padding: 24px 0 40px; }
+.upi-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.upi-kicker { font: 700 12px/1.2 "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.upi-header h1 { margin: 4px 0 6px; font-size: 32px; line-height: 1.15; }
+.upi-subtitle { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.upi-nav { display: inline-flex; gap: 8px; padding: 6px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.7); }
+.upi-nav a { text-decoration: none; color: var(--muted); padding: 8px 14px; border-radius: 12px; font-weight: 700; }
+.upi-nav a.active { color: #fff; background: var(--line-strong); }
+.upi-layout { display: grid; gap: 20px; }
+.upi-layout-generate { grid-template-columns: 380px minmax(0, 1fr); }
+.upi-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 20px; box-shadow: 0 12px 32px rgba(22,22,22,.06); }
+.upi-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.upi-panel-head h2 { margin: 0; font-size: 20px; }
+label { display: block; margin: 12px 0 8px; font-weight: 700; }
+input, textarea, select, button, .upi-button { font: inherit; }
+input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-strong); color: var(--ink); padding: 12px; }
+textarea { min-height: 220px; resize: vertical; font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+button, .upi-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 14px; border-radius: 12px; border: 0; background: var(--line-strong); color: #fff; font-weight: 700; cursor: pointer; text-decoration: none; }
+button.secondary, .upi-button.secondary { background: #e8e3d6; color: var(--ink); }
+.upi-grid.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.upi-button-wrap { display: grid; gap: 10px; align-content: end; }
+.upi-status { font-size: 12px; font-weight: 700; }
+.upi-badge { display: inline-flex; align-items: center; justify-content: center; padding: 6px 10px; border-radius: 999px; font: 700 12px/1.2 "IBM Plex Mono", monospace; }
+.upi-badge.pending { background: #fff5e4; color: var(--warning); }
+.upi-badge.success { background: #e9fbef; color: var(--success); }
+.upi-badge.failed { background: #fff1f0; color: var(--danger); }
+.upi-artifact { min-height: 320px; display: flex; align-items: center; justify-content: center; padding: 16px; border: 1px dashed var(--line); border-radius: 16px; background: var(--panel-strong); }
+.upi-artifact img { display: block; width: min(360px, 100%); height: auto; border-radius: 14px; border: 1px solid var(--line); background: #fff; padding: 10px; }
+.upi-artifact code { display: block; width: 100%; padding: 14px; border-radius: 14px; background: #f5f2ea; color: var(--ink); font: 500 12px/1.6 "IBM Plex Mono", monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.upi-actions, .upi-actions-inline { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.upi-meta-grid, .upi-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
+.upi-meta-card { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel-strong); }
+.upi-meta-card label { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.upi-meta-card code { display: block; font: 500 12px/1.5 "IBM Plex Mono", monospace; overflow-wrap: anywhere; }
+.upi-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel-strong); }
+.upi-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+.upi-table th, .upi-table td { padding: 12px 14px; border-bottom: 1px solid #ece7dc; text-align: left; vertical-align: top; }
+.upi-table th { font-size: 12px; color: var(--muted); font-weight: 700; }
+.upi-table tbody tr { cursor: pointer; }
+.upi-table tbody tr:hover { background: #f7f3ea; }
+.cli-modal.hidden { display: none; }
+.cli-modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(4px); }
+.cli-dialog { width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: hidden; border-radius: 20px; border: 1px solid #252525; background: var(--terminal); box-shadow: 0 24px 80px rgba(15,23,42,.28); }
+.cli-dialog-wide { width: min(1200px, calc(100vw - 32px)); }
+.cli-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,.08); color: var(--terminal-ink); }
+.cli-title { font: 700 14px/1.2 "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .04em; }
+.cli-meta { margin-top: 6px; color: rgba(244,241,232,.72); font: 500 12px/1.5 "IBM Plex Mono", monospace; }
+.cli-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.cli-actions button { min-height: 38px; }
+.cli-output { margin: 0; padding: 18px; height: min(72vh, 780px); overflow: auto; color: var(--terminal-ink); background: var(--terminal); font: 500 12px/1.6 "IBM Plex Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 980px) { .upi-layout-generate { grid-template-columns: 1fr; } .upi-shell { width: min(100vw - 24px, 100%); } }

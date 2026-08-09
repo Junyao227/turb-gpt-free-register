@@ -1354,8 +1354,6 @@ def update_account_extract(acc_id: int, result: dict | None = None) -> bool:
             row["extract_link_job_id"] = result.get("job_id")
         if result.get("link_type") is not None:
             row["extract_link_type"] = result.get("link_type")
-        if result.get("cdk_remaining") is not None:
-            row["extract_link_cdk_remaining"] = result.get("cdk_remaining")
         payload = result.get("result") if isinstance(result.get("result"), dict) else {}
         if payload:
             row["extract_link_long_url"] = payload.get("long_url")
@@ -1365,8 +1363,6 @@ def update_account_extract(acc_id: int, result: dict | None = None) -> bool:
             row["extract_link_payment_method"] = payload.get("payment_method")
             row["extract_link_payment_link_type"] = payload.get("payment_link_type")
             row["extract_link_expires_at"] = payload.get("expires_at")
-            if payload.get("cdk_remaining") is not None:
-                row["extract_link_cdk_remaining"] = payload.get("cdk_remaining")
             row["extract_link_result_json"] = json.dumps(payload, ensure_ascii=False)
         row["updated_at"] = _now()
         _save_accounts(accounts)

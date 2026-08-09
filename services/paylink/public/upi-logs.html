@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPLL-UPI · Logs</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/assets/upi.css?v=20260623-upi" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body data-page="logs">
+    <main class="upi-shell">
+      <header class="upi-header">
+        <div>
+          <div class="upi-kicker">OPLL-UPI</div>
+          <h1>Live Logs</h1>
+          <p class="upi-subtitle">CLI 风格原始日志面板，直接面向诊断，不做摘要卡片。</p>
+        </div>
+        <nav class="upi-nav">
+          <a href="/upi">Generate</a>
+          <a href="/upi/tasks">Tasks</a>
+          <a class="active" href="/upi/logs">Logs</a>
+          <a href="/upi/result">Result</a>
+          <a href="/in-qr">IN-QR</a>
+        </nav>
+      </header>
+
+      <section class="upi-panel">
+        <div class="upi-panel-head">
+          <h2>Raw Logs</h2>
+          <div class="upi-actions-inline">
+            <input id="jobIdInput" type="text" placeholder="输入 job_id" />
+            <button id="loadJobLogs" type="button">加载日志</button>
+          </div>
+        </div>
+        <div class="cli-head" style="margin-bottom:12px;border:1px solid var(--line);border-radius:16px;background:#151515;">
+          <div>
+            <div class="cli-title">Task Stream</div>
+            <div id="cliMeta" class="cli-meta">未选择任务</div>
+          </div>
+          <div class="cli-actions">
+            <button id="refreshLogs" class="secondary" type="button">刷新</button>
+            <button id="toggleAutoscroll" class="secondary" type="button">暂停滚动</button>
+          </div>
+        </div>
+        <pre id="cliOutput" class="cli-output"></pre>
+      </section>
+
+      <script src="/assets/upi-logs.js?v=20260623-upi"></script>
+    </main>
+  </body>
+</html>

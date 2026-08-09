@@ -9,7 +9,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 try:
@@ -64,13 +64,6 @@ def _api_base() -> str:
     return base
 
 
-def _cdk(value: str | None = None) -> str:
-    cdk = str(value or _runtime_setting("EXTRACT_LINK_CDK", "") or "").strip()
-    if not cdk:
-        raise ValueError("EXTRACT_LINK_CDK/CDK 为空")
-    return cdk
-
-
 _WORKERS = _int_setting("EXTRACT_LINK_WORKERS", 3, 1, 16)
 _QUEUE_LIMIT = _int_setting("EXTRACT_LINK_QUEUE_LIMIT", 500, _WORKERS, 5000)
 _EXECUTOR = ThreadPoolExecutor(max_workers=_WORKERS, thread_name_prefix="extract-link")
@@ -87,36 +80,10 @@ def _session():
     return curl_requests.Session()
 
 
-def query_cdk(*, cdk: str | None = None) -> dict:
-    base = _api_base()
-    code = _cdk(cdk)
-    timeout = _int_setting("EXTRACT_LINK_REQUEST_TIMEOUT", 30, 5, 300)
-    s = _session()
-    try:
-        if s is None:
-            req = Request(f"{base}/api/cdk?{urlencode({'code': code})}", headers={"Accept": "application/json"})
-            with urlopen(req, timeout=timeout) as resp:
-                payload = json.loads(resp.read().decode("utf-8", "replace") or "{}")
-            return payload if isinstance(payload, dict) else {}
-        resp = s.get(f"{base}/api/cdk?{urlencode({'code': code})}", timeout=timeout)
-        try:
-            payload = resp.json()
-        except Exception:
-            payload = {"error": (resp.text or "")[:300]}
-        if resp.status_code < 200 or resp.status_code >= 300:
-            raise RuntimeError(payload.get("error") or f"HTTP {resp.status_code}")
-        return payload if isinstance(payload, dict) else {}
-    finally:
-        try:
-            s.close()
-        except Exception:
-            pass
-
-
-def _create_extract_job(*, token: str, link_type: str, cdk: str) -> dict:
+def _create_extract_job(*, token: str, link_type: str) -> dict:
     base = _api_base()
     timeout = _int_setting("EXTRACT_LINK_REQUEST_TIMEOUT", 30, 5, 300)
-    payload = {"link_type": _link_type(link_type), "cdk": _cdk(cdk), "token": token}
+    payload = {"link_type": _link_type(link_type), "token": token}
     s = _session()
     try:
         if s is None:
@@ -149,10 +116,10 @@ def _create_extract_job(*, token: str, link_type: str, cdk: str) -> dict:
             pass
 
 
-def _iter_sse_events(*, job_id: str, cdk: str):
+def _iter_sse_events(*, job_id: str):
     base = _api_base()
     timeout = _int_setting("EXTRACT_LINK_EVENT_TIMEOUT", 180, 30, 900)
-    url = f"{base}/api/jobs/{quote(job_id, safe='')}/events?{urlencode({'cdk': _cdk(cdk)})}"
+    url = f"{base}/api/jobs/{quote(job_id, safe='')}/events"
     s = _session()
     try:
         if s is None:
@@ -266,13 +233,13 @@ def _format_failure_reason(exc: Exception, logs: list[str] | None = None, last_e
     return reason[:500]
 
 
-def _run_extract(*, account_id: int, email: str, access_token: str, link_type: str, cdk: str, trigger: str) -> dict:
+def _run_extract(*, account_id: int, email: str, access_token: str, link_type: str, trigger: str) -> dict:
     logs: list[str] = []
     last_event = None
     try:
         if not db.mark_account_extract_running(account_id):
             return {"ok": False, "error": "账号已删除或提链状态已被重置"}
-        job = _create_extract_job(token=access_token, link_type=link_type, cdk=cdk)
+        job = _create_extract_job(token=access_token, link_type=link_type)
         job_id = str(job.get("job_id") or "")
         db.update_account_extract(account_id, {
             "ok": False,
@@ -280,9 +247,8 @@ def _run_extract(*, account_id: int, email: str, access_token: str, link_type: s
             "job_id": job_id,
             "link_type": link_type,
             "message": "提链任务已创建，等待结果",
-            "cdk_remaining": job.get("cdk_remaining"),
         })
-        for event, data in _iter_sse_events(job_id=job_id, cdk=cdk):
+        for event, data in _iter_sse_events(job_id=job_id):
             last_event = {"event": event, "data": data}
             if event == "log":
                 msg = str((data or {}).get("message") or "")[:300]
@@ -328,16 +294,15 @@ def _run_extract(*, account_id: int, email: str, access_token: str, link_type: s
         _QUEUE_SLOTS.release()
 
 
-def enqueue_account_extract(*, account_id: int, email: str, access_token: str, trigger: str = "manual", link_type: str | None = None, cdk: str | None = None) -> dict:
+def enqueue_account_extract(*, account_id: int, email: str, access_token: str, trigger: str = "manual", link_type: str | None = None) -> dict:
     if not _QUEUE_SLOTS.acquire(blocking=False):
         return {"accepted": False, "busy": False, "error": "提链队列已满"}
     try:
         lt = _link_type(link_type)
-        code = _cdk(cdk)
         if not db.claim_account_extract(account_id, trigger=trigger, link_type=lt):
             _QUEUE_SLOTS.release()
             return {"accepted": False, "busy": True, "error": "该账号正在提链中"}
-        fut = _EXECUTOR.submit(_run_extract, account_id=account_id, email=email, access_token=access_token, link_type=lt, cdk=code, trigger=trigger)
+        fut = _EXECUTOR.submit(_run_extract, account_id=account_id, email=email, access_token=access_token, link_type=lt, trigger=trigger)
         return {"accepted": True, "busy": False, "future": fut, "link_type": lt}
     except Exception:
         _QUEUE_SLOTS.release()

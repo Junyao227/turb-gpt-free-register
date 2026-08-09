@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>运行统计</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f7fb;
+        --panel: #ffffff;
+        --ink: #0f1728;
+        --muted: #667085;
+        --line: #d6dde8;
+        --accent: #111111;
+        --ok: #0f766e;
+        --danger: #b42318;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, #f9fbfd 0%, var(--bg) 100%);
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+      }
+
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 24px 16px 40px;
+      }
+
+      .nav {
+        display: flex;
+        gap: 8px;
+        width: max-content;
+        max-width: 100%;
+        margin-bottom: 18px;
+        padding: 6px;
+        border: 1px solid #e3e7ef;
+        border-radius: 16px;
+        background: #f3f5f9;
+        flex-wrap: wrap;
+      }
+
+      .nav a, .nav button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: #4c5a70;
+        text-decoration: none;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .nav a.active {
+        background: #111;
+        color: #fff;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+      }
+
+      .lead {
+        color: var(--muted);
+        line-height: 1.6;
+        margin-bottom: 18px;
+      }
+
+      .status {
+        margin-bottom: 14px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .value {
+        margin-top: 8px;
+        font-size: 26px;
+        font-weight: 900;
+      }
+
+      .section {
+        margin-top: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+
+      .section-head h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .actions button {
+        min-height: 38px;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .log-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .log-item {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 14px;
+      }
+
+      .log-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .log-kind {
+        font-size: 12px;
+        font-weight: 800;
+        color: #245b86;
+      }
+
+      .log-ts {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .log-message {
+        margin-top: 8px;
+        font-weight: 700;
+      }
+
+      .log-meta {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+    </style>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body>
+    <main class="page">
+      <nav class="nav" aria-label="主菜单">
+        <a href="/">转长链</a>
+        <a href="/qr">二维码队列</a>
+        <a class="active" href="/stats">运行统计</a>
+        <button id="logout" type="button">退出</button>
+      </nav>
+
+      <h1>运行统计</h1>
+      <div class="lead">汇总当前控制台任务、二维码队列和最近 7 天事件日志。</div>
+      <div id="status" class="status">正在加载统计...</div>
+
+      <section class="grid" id="statsGrid"></section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>最近事件</h2>
+          <div class="actions">
+            <button id="refresh" type="button">刷新</button>
+          </div>
+        </div>
+        <div id="logs" class="log-list"></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const PAGE_SCOPE = "admin";
+
+      function redirectToLogin(scope = PAGE_SCOPE) {
+        const next = encodeURIComponent(window.location.pathname || "/stats");
+        window.location.href = `/login?scope=${encodeURIComponent(scope)}&next=${next}`;
+      }
+
+      async function readJsonResponse(response) {
+        const text = await response.text();
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch (_) {
+          return { detail: text || "响应不是有效 JSON" };
+        }
+      }
+
+      async function apiFetch(url, options = {}, scope = PAGE_SCOPE) {
+        const response = await fetch(url, {
+          cache: "no-store",
+          ...options,
+        });
+        if (response.status === 401) {
+          redirectToLogin(scope);
+          throw new Error("登录已失效");
+        }
+        return response;
+      }
+
+      function setStatus(text, isError = false) {
+        const node = $("status");
+        node.textContent = text;
+        node.style.color = isError ? "#b42318" : "#667085";
+      }
+
+      function formatTs(ts) {
+        const value = Number(ts || 0);
+        if (!Number.isFinite(value) || value <= 0) return "-";
+        return new Date(value * 1000).toLocaleString();
+      }
+
+      function renderStats(data) {
+        const cards = [
+          ["累计请求", data.requests_total],
+          ["成功返回", data.success_total],
+          ["错误次数", data.error_total],
+          ["回退次数", data.fallback_total],
+          ["运行中任务", data.task_running_total],
+          ["完成任务", data.task_done_total],
+          ["失败任务", data.task_failed_total],
+          ["二维码队列", data.pix_queue_total],
+          ["支付成功", data.pix_succeeded_total],
+          ["终态失败", data.pix_terminal_total],
+          ["最近 7 天日志", data.log_total],
+          ["运行秒数", data.uptime_seconds],
+        ];
+        $("statsGrid").innerHTML = cards.map(([label, value]) => `
+          <div class="card">
+            <div class="label">${label}</div>
+            <div class="value">${value ?? "--"}</div>
+          </div>
+        `).join("");
+      }
+
+      function renderLogs(items) {
+        const rows = Array.isArray(items) ? items : [];
+        if (!rows.length) {
+          $("logs").innerHTML = '<div class="card">当前没有事件日志。</div>';
+          return;
+        }
+        $("logs").innerHTML = rows.map((item) => `
+          <div class="log-item">
+            <div class="log-top">
+              <div class="log-kind">${item.kind || "-"}</div>
+              <div class="log-ts">${formatTs(item.ts)}</div>
+            </div>
+            <div class="log-message">${item.message || "-"}</div>
+            <div class="log-meta">
+              ${item.job_id ? `job_id: ${item.job_id}<br>` : ""}
+              ${item.cs_id ? `cs_id: ${item.cs_id}<br>` : ""}
+              ${item.status ? `status: ${item.status}<br>` : ""}
+              ${item.scope ? `scope: ${item.scope}` : ""}
+            </div>
+          </div>
+        `).join("");
+      }
+
+      async function loadPage() {
+        setStatus("正在加载统计...");
+        try {
+          const [statsResponse, logsResponse] = await Promise.all([
+            apiFetch("/api/stats"),
+            apiFetch("/api/logs?limit=120"),
+          ]);
+          const stats = await readJsonResponse(statsResponse);
+          const logs = await readJsonResponse(logsResponse);
+          if (!statsResponse.ok) {
+            throw new Error(stats.detail || `统计加载失败 (${statsResponse.status})`);
+          }
+          if (!logsResponse.ok) {
+            throw new Error(logs.detail || `日志加载失败 (${logsResponse.status})`);
+          }
+          renderStats(stats);
+          renderLogs(logs.items);
+          setStatus(`最近成功时间：${stats.last_success_at ? formatTs(stats.last_success_at) : "-"}`);
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error), true);
+        }
+      }
+
+      $("refresh").addEventListener("click", loadPage);
+      $("logout").addEventListener("click", async () => {
+        try {
+          await apiFetch("/api/auth/logout", { method: "POST" });
+        } catch (_) {}
+        redirectToLogin(PAGE_SCOPE);
+      });
+
+      loadPage();
+    </script>
+  </body>
+</html>

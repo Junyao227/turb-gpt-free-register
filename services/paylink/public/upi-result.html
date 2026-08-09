@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPLL-UPI · Result</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/assets/upi.css?v=20260623-upi" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body data-page="result">
+    <main class="upi-shell">
+      <header class="upi-header">
+        <div>
+          <div class="upi-kicker">OPLL-UPI</div>
+          <h1>Result Detail</h1>
+          <p class="upi-subtitle">聚焦单个作业的产物、状态和原始诊断摘要。</p>
+        </div>
+        <nav class="upi-nav">
+          <a href="/upi">Generate</a>
+          <a href="/upi/tasks">Tasks</a>
+          <a href="/upi/logs">Logs</a>
+          <a href="/in-qr">IN-QR</a>
+        </nav>
+      </header>
+
+      <section class="upi-layout upi-layout-generate">
+        <section class="upi-panel upi-result-panel">
+          <div class="upi-panel-head">
+            <h2>Artifact</h2>
+            <div id="resultBadge" class="upi-badge pending">idle</div>
+          </div>
+          <div class="upi-artifact" id="artifactViewport"><div class="muted">等待结果</div></div>
+          <div class="upi-actions">
+            <a id="openArtifact" class="upi-button disabled" href="#" target="_blank" rel="noopener">打开产物</a>
+            <button id="copyArtifact" class="secondary" type="button">复制产物</button>
+            <a id="openLogsLink" class="secondary upi-button" href="/upi/logs">打开日志页</a>
+          </div>
+        </section>
+        <section class="upi-panel">
+          <div class="upi-panel-head"><h2>Metadata</h2><div id="resultState" class="upi-status muted">未选择任务</div></div>
+          <div class="upi-meta-grid">
+            <div class="upi-meta-card"><label>job_id</label><code id="metaJobId">-</code></div>
+            <div class="upi-meta-card"><label>cs_id</label><code id="metaCsId">-</code></div>
+            <div class="upi-meta-card"><label>reason</label><code id="metaReason">-</code></div>
+            <div class="upi-meta-card"><label>retryable</label><code id="metaRetryable">-</code></div>
+            <div class="upi-meta-card"><label>approval_result</label><code id="metaApproval">-</code></div>
+            <div class="upi-meta-card"><label>submission_state</label><code id="metaSubmission">-</code></div>
+            <div class="upi-meta-card"><label>next_action_type</label><code id="metaActionType">-</code></div>
+            <div class="upi-meta-card"><label>line / country / currency</label><code id="metaSummary">-</code></div>
+          </div>
+          <div class="upi-panel-head" style="margin-top:18px"><h2>Protocol Summary</h2></div>
+          <pre id="protocolSummary" class="cli-output" style="height:320px"></pre>
+        </section>
+      </section>
+
+      <script src="/assets/upi-result.js?v=20260623-upi"></script>
+    </main>
+  </body>
+</html>

@@ -748,22 +748,13 @@ def create_app(auth_code: str | None = None) -> Flask:
             "skipped_count": len(skipped),
         }), 202
 
-    @app.get("/api/extract-link/cdk")
-    def api_extract_link_cdk():
-        """查询当前配置或传入 CDK 的剩余次数。"""
-        code = (request.args.get("code") or "").strip() or None
-        try:
-            return jsonify({"ok": True, **extract_link_service.query_cdk(cdk=code)})
-        except Exception as exc:
-            return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 400
-
     def _is_extract_eligible(acc: dict) -> bool:
         plan = str(acc.get("current_plan_type") or acc.get("plan_type") or "").lower()
         return plan == "free" and bool(acc.get("plus_trial_eligible"))
 
     @app.post("/api/accounts/extract-link")
     def api_account_extract_link():
-        """单账号提链。Body {account_id|id, link_type?, cdk?}。"""
+        """单账号提链。Body {account_id|id, link_type?}。"""
         data = request.get_json(silent=True) or {}
         acc_id = data.get("account_id") or data.get("id")
         try:
@@ -784,7 +775,6 @@ def create_app(auth_code: str | None = None) -> Flask:
                 access_token=token,
                 trigger="manual",
                 link_type=data.get("link_type"),
-                cdk=data.get("cdk"),
             )
         except Exception as exc:
             return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 400
@@ -796,7 +786,7 @@ def create_app(auth_code: str | None = None) -> Flask:
 
     @app.post("/api/accounts/extract-link-bulk")
     def api_accounts_extract_link_bulk():
-        """批量提链。Body {account_ids:[...], link_type?, cdk?}。"""
+        """批量提链。Body {account_ids:[...], link_type?}。"""
         data = request.get_json(silent=True) or {}
         ids = data.get("account_ids") or data.get("ids") or []
         if not isinstance(ids, list) or not ids:
@@ -837,7 +827,6 @@ def create_app(auth_code: str | None = None) -> Flask:
                     access_token=token,
                     trigger="manual_bulk",
                     link_type=data.get("link_type"),
-                    cdk=data.get("cdk"),
                 )
             except Exception as exc:
                 failed.append({"id": acc_id, "email": email, "error": f"{type(exc).__name__}: {exc}"})

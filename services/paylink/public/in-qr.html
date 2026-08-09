@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OPLL-UPI · IN-QR</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/assets/upi.css?v=20260623-upi" />
+    <link rel="stylesheet" href="/assets/qr.css?v=20260623-upi-queue" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body data-provider-page="upi">
+    <main class="upi-shell page">
+      <header class="upi-header">
+        <div>
+          <div class="upi-kicker">OPLL-UPI</div>
+          <h1 id="pageTitle">OPLL-UPI · IN-QR</h1>
+          <ol id="pageHint" class="muted page-hint-list">
+            <li id="pageHintLine1">以下是印度 UPI 二维码支付订单。</li>
+            <li id="pageHintLine2">UPI 不跳转独立支付页；请直接扫描页面中的二维码完成支付。</li>
+            <li id="pageHintLine3">支付完成后可手动删除，或等待后续状态流转接入。</li>
+          </ol>
+        </div>
+        <nav class="upi-nav">
+          <a href="/upi">Generate</a>
+          <a href="/upi/tasks">Tasks</a>
+          <a href="/upi/logs">Logs</a>
+          <a href="/upi/result">Result</a>
+          <a class="active" href="/in-qr">IN-QR</a>
+        </nav>
+      </header>
+
+      <section class="upi-panel">
+        <div class="actions">
+          <button id="refresh" type="button">刷新队列</button>
+          <button id="clearTerminal" class="secondary" type="button">清理终态</button>
+          <button id="logout" class="secondary" type="button">退出</button>
+        </div>
+
+        <div id="status" class="status">正在加载印度 UPI 队列...</div>
+        <div id="queue" class="queue"></div>
+      </section>
+    </main>
+
+    <script src="/assets/provider-qr.js?v=20260623-upi-qr"></script>
+  </body>
+</html>

@@ -1,0 +1,2062 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>巴西PIX开通工具</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f5f7;
+        --panel: #ffffff;
+        --panel-soft: #fbfbfc;
+        --ink: #111111;
+        --muted: #6b7280;
+        --line: #dedfe3;
+        --line-strong: #cbccd1;
+        --soft: #eef1f5;
+        --soft-strong: #e6ebf1;
+        --accent: #111111;
+        --accent-2: #0f766e;
+        --danger: #b42318;
+        --danger-bg: #fff1f0;
+        --warn: #8a5a00;
+        --warn-bg: #fff7df;
+        --ok: #0f5f22;
+        --ok-bg: #effcf2;
+        --blue: #155eef;
+        --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.08);
+        --shadow-md: 0 10px 28px rgba(15, 23, 42, 0.06);
+        --radius-xl: 24px;
+        --radius-lg: 18px;
+        --radius-md: 14px;
+        --radius-sm: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at top, rgba(0, 0, 0, 0.05), transparent 28%),
+          linear-gradient(180deg, #f8f8fa 0%, var(--bg) 100%);
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+      }
+
+      .page {
+        min-height: 100vh;
+        padding: 34px 16px 46px;
+      }
+
+      .shell {
+        width: min(1380px, calc(100vw - 32px));
+        margin: 0 auto;
+      }
+
+      .card {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        padding: 22px;
+        box-shadow: var(--shadow-lg);
+      }
+
+      .site-nav {
+        display: flex;
+        gap: 8px;
+        width: max-content;
+        max-width: 100%;
+        margin: 0 0 18px;
+        padding: 6px;
+        border: 1px solid #e3e4e8;
+        border-radius: 16px;
+        background: #f2f2f4;
+      }
+
+      .site-nav a {
+        color: #555;
+        text-decoration: none;
+        padding: 8px 14px;
+        border-radius: 12px;
+        font-size: 14px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .site-nav a.active {
+        color: #fff;
+        background: #111;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+      }
+
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+
+      .title-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #111 0%, #2f2f35 100%);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 900;
+        flex: none;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        line-height: 1.15;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .lead {
+        margin-bottom: 10px;
+      }
+
+      .privacy {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border: 1px solid #ead7a4;
+        border-radius: 14px;
+        background: #fff8e5;
+        color: #6b4a00;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .form-block {
+        margin-top: 18px;
+      }
+
+      .console-shell {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 18px;
+        margin-top: 18px;
+        align-items: start;
+      }
+
+      .control-column {
+        position: sticky;
+        top: 18px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .work-column {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+      }
+
+      .control-block,
+      .work-block {
+        padding: 16px;
+        border: 1px solid #d8d8dc;
+        border-radius: 16px;
+        background: #fff;
+      }
+
+      .control-block-title,
+      .work-block-title {
+        margin: 0 0 10px;
+        font-size: 14px;
+        font-weight: 800;
+        color: #111;
+      }
+
+      .row-between {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      label {
+        display: block;
+        margin: 18px 0 8px;
+        font-weight: 700;
+      }
+
+      .label-inline {
+        margin: 0;
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        border: 1px solid #ccc;
+        border-radius: 14px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        padding: 12px;
+      }
+
+      textarea {
+        min-height: 160px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      textarea:focus,
+      input:focus,
+      select:focus {
+        outline: none;
+        border-color: #111;
+        box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.08);
+      }
+
+      .token-hint,
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .option-row {
+        display: flex;
+        gap: 24px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+
+      .inline-option {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        font-weight: 700;
+      }
+
+      .inline-option input {
+        width: auto;
+        margin: 0;
+        min-height: 0;
+      }
+
+      details {
+        margin-top: 14px;
+      }
+
+      summary {
+        cursor: pointer;
+        color: #333;
+        font-weight: 700;
+      }
+
+      .main-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+
+      .main-actions-left,
+      .main-actions-right {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      button,
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        padding: 13px 18px;
+        border: 0;
+        border-radius: 14px;
+        background: #111;
+        color: #fff;
+        text-decoration: none;
+        font: inherit;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      button.secondary,
+      .btn.secondary {
+        color: #111;
+        background: #eaebee;
+      }
+
+      button.secondary:hover,
+      .btn.secondary:hover {
+        background: #e1e3e8;
+      }
+
+      button:hover,
+      .btn:hover {
+        background: #222;
+      }
+
+      button:disabled,
+      .btn.disabled {
+        opacity: 0.58;
+        pointer-events: none;
+      }
+
+      .status {
+        min-height: 24px;
+        margin-top: 10px;
+        color: var(--muted);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .progress-card {
+        display: none;
+        margin-top: 14px;
+        padding: 14px;
+        border: 1px solid #dfe3ea;
+        border-radius: 16px;
+        background: #fbfcff;
+      }
+
+      .progress-card.error {
+        border-color: #f0b6b6;
+        background: #fff3f2;
+      }
+
+      .progress-top {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+
+      .progress-title {
+        font-size: 14px;
+        line-height: 1.45;
+        font-weight: 600;
+        color: #222;
+      }
+
+      .progress-percent {
+        color: #555;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .progress-track {
+        height: 9px;
+        background: #e9edf5;
+        border-radius: 99px;
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, #111, #0f766e);
+        border-radius: 99px;
+        transition: width 0.25s ease;
+      }
+
+      .progress-card.error .progress-fill {
+        background: #d92d20;
+      }
+
+      .progress-steps {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .progress-step {
+        color: #8a8f98;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .progress-step.active {
+        color: #111;
+        font-weight: 700;
+      }
+
+      .progress-step.done {
+        color: #0f766e;
+        font-weight: 700;
+      }
+
+      .result {
+        display: none;
+        margin-top: 16px;
+        padding: 14px;
+        border: 1px solid #d8d8dc;
+        border-radius: 16px;
+        background: var(--panel-soft);
+      }
+
+      .result.show {
+        display: block;
+      }
+
+      .task-board-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .task-board-title {
+        font-size: 15px;
+        font-weight: 800;
+        color: #111;
+      }
+
+      .task-summary {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .task-summary-card {
+        padding: 12px;
+        border: 1px solid #e4e7ec;
+        border-radius: 14px;
+        background: #fbfcff;
+      }
+
+      .task-summary-label {
+        color: #667085;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .task-summary-value {
+        margin-top: 6px;
+        font-size: 22px;
+        font-weight: 900;
+        line-height: 1.1;
+      }
+
+      .task-list-wrap {
+        overflow-x: auto;
+        border: 1px solid #e4e7ec;
+        border-radius: 14px;
+      }
+
+      .task-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+
+      .task-pagination-info {
+        color: #667085;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .task-pagination-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .task-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 820px;
+      }
+
+      .task-table th,
+      .task-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #edf0f5;
+        text-align: left;
+        vertical-align: middle;
+      }
+
+      .task-table th {
+        background: #f8fafc;
+        color: #667085;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .task-table tbody tr {
+        background: #fff;
+      }
+
+      .task-table tbody tr:hover {
+        background: #fafcff;
+      }
+
+      .task-table tbody tr.selected {
+        background: #f4f9ff;
+      }
+
+      .task-table td {
+        font-size: 13px;
+        color: #101828;
+      }
+
+      .task-empty {
+        padding: 16px;
+        border: 1px dashed #d0d5dd;
+        border-radius: 14px;
+        background: #fafbfc;
+        color: #98a2b3;
+        font-size: 13px;
+      }
+
+      .task-id {
+        color: #667085;
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      .task-badge {
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .task-badge.running {
+        background: #eef4ff;
+        color: #1d4ed8;
+      }
+
+      .task-badge.done {
+        background: #ecfdf3;
+        color: #027a48;
+      }
+
+      .task-badge.failed {
+        background: #fef3f2;
+        color: #b42318;
+      }
+
+      .task-mini-track {
+        height: 7px;
+        background: #e9edf5;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .task-mini-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #111, #0f766e);
+      }
+
+      .task-row.failed .task-mini-fill {
+        background: #d92d20;
+      }
+
+      .task-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .task-actions button {
+        min-height: 32px;
+        padding: 6px 10px;
+        border: 1px solid #d5dae3;
+        border-radius: 10px;
+        background: #fff;
+        color: #44516b;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .task-log-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+
+      .task-log-title {
+        font-size: 14px;
+        font-weight: 800;
+        color: #111;
+      }
+
+      .task-log-meta {
+        color: #667085;
+        font-size: 12px;
+      }
+
+      .task-log-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .task-log-list {
+        display: grid;
+        gap: 8px;
+        max-height: 420px;
+        overflow: auto;
+      }
+
+      .task-log-item {
+        padding: 10px 12px;
+        border: 1px solid #e4e7ec;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .task-log-item.failed {
+        border-color: #f0b6b6;
+        background: #fff6f5;
+      }
+
+      .task-log-item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+      }
+
+      .task-log-kind {
+        color: #2f56d5;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .task-log-time {
+        color: #667085;
+        font-size: 11px;
+      }
+
+      .task-log-message {
+        color: #101828;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.5);
+        backdrop-filter: blur(6px);
+      }
+
+      .modal {
+        width: min(1100px, calc(100vw - 32px));
+        max-height: calc(100vh - 40px);
+        border-radius: 20px;
+        border: 1px solid #d8d8dc;
+        background: #fff;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+        overflow: hidden;
+      }
+
+      .modal-body {
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+      }
+
+      .modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .task-status-stack {
+        display: grid;
+        gap: 6px;
+      }
+
+      .task-status-text {
+        color: #667085;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .result-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+
+      .row {
+        display: grid;
+        gap: 7px;
+        margin-top: 13px;
+      }
+
+      .row:first-of-type {
+        margin-top: 0;
+      }
+
+      code {
+        display: block;
+        overflow-wrap: anywhere;
+        padding: 12px;
+        border-radius: 12px;
+        background: var(--soft);
+        color: #101828;
+        line-height: 1.45;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .pix-qr-image-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+        max-width: 100%;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fff;
+      }
+
+      .pix-qr-image {
+        display: block;
+        width: min(280px, 100%);
+        height: auto;
+        border-radius: 8px;
+      }
+
+      .result-title {
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      @media (max-width: 1160px) {
+        .console-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .control-column {
+          position: static;
+        }
+      }
+
+      @media (max-width: 920px) {
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 780px) {
+        .shell {
+          width: min(100vw - 20px, 1380px);
+        }
+
+        .grid,
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+
+        .task-summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body>
+    <div class="page">
+      <main class="shell">
+        <section class="card">
+          <nav class="site-nav" aria-label="主菜单">
+            <a class="active" href="/">转长链</a>
+            <a href="/upi">OPLL-UPI</a>
+            <a href="/upi/tasks">UPI任务</a>
+            <a href="/debug-generate">调试页面</a>
+            <a href="/qr">二维码队列</a>
+            <a href="/kr-qr">韩国队列</a>
+            <a href="/ch-qr">瑞士队列</a>
+            <a href="/in-qr">印度队列</a>
+            <a href="/stats">运行统计</a>
+            <a href="/login?scope=admin" id="logoutLink">退出</a>
+          </nav>
+
+          <div class="title-row">
+            <div class="title-icon">BR</div>
+            <h1>巴西 PIX 线路</h1>
+          </div>
+
+          <div class="console-shell">
+            <aside class="control-column">
+              <div class="control-block">
+                <div class="control-block-title">控制区</div>
+                <div class="grid">
+                  <div>
+                    <label for="concurrency">并发数量</label>
+                    <input id="concurrency" type="number" min="1" max="20" value="1" />
+                    <div class="muted">一次同时启动多少个生产任务。</div>
+                  </div>
+                  <div>
+                    <label for="totalCount">总数量</label>
+                    <input id="totalCount" type="number" min="1" max="200" value="1" />
+                    <div class="muted">本轮计划总共生成多少个任务。</div>
+                  </div>
+                  <div>
+                    <label for="linkType">线路</label>
+                    <select id="linkType">
+                      <option value="pix" selected>巴西线路（BR / BRL）</option>
+                      <option value="korea">韩国线路（KR / KRW）</option>
+                      <option value="swiss">瑞士线路（CH / CHF）</option>
+                      <option value="upi">印度线路（IN / INR）</option>
+                      <option value="ideal">荷兰 iDEAL（NL / EUR）</option>
+                      <option value="gopay">印尼线路（ID / IDR）</option>
+                    </select>
+                    <div class="muted">按线路返回对应的支付链接或支付页。</div>
+                  </div>
+                </div>
+                <div class="form-block">
+                  <div class="row-between">
+                    <label class="label-inline" for="accessToken">Access Token 或 session JSON（调试用）</label>
+                    <button id="copySessionUrl" class="secondary" type="button" style="min-height:40px;padding:8px 12px;font-size:14px">复制 Session 地址</button>
+                  </div>
+                  <textarea id="accessToken" autocomplete="off" spellcheck="false" placeholder="留空时默认自动从 ZC 号池取号。需要手动模式时，可粘贴 accessToken 或 session JSON。"></textarea>
+                  <div id="tokenMeta" class="token-hint">这里不影响主按钮；只有点击“手动 AT 生成”时才会使用你填写的 AT。</div>
+                </div>
+                <div class="main-actions">
+                  <div class="main-actions-left">
+                    <button id="generate" type="button">开始生产</button>
+                    <button id="manualGenerate" class="secondary" type="button">手动生成链接</button>
+                  </div>
+                </div>
+                <div id="status" class="status">按所选线路自动切换国家、币种、代理和支付方式，结果区会返回对应链接。</div>
+                <div id="progressCard" class="progress-card" aria-live="polite">
+                  <div class="progress-top">
+                    <div id="progressTitle" class="progress-title">等待开始</div>
+                    <div id="progressPercent" class="progress-percent">0%</div>
+                  </div>
+                  <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+                  <div class="progress-steps">
+                    <span id="progressStepToken" class="progress-step">读取 Token</span>
+                    <span id="progressStepProxy" class="progress-step">选定代理</span>
+                    <span id="progressStepOpenAI" class="progress-step">OpenAI Checkout</span>
+                    <span id="progressStepStripe" class="progress-step">支付链接</span>
+                    <span id="progressStepRewrite" class="progress-step">整理结果</span>
+                  </div>
+                </div>
+              </div>
+
+              <div id="result" class="result control-block" style="display:none">
+                <div class="result-title">当前结果</div>
+                <div class="result-actions">
+                  <a id="openLink" class="btn disabled" target="_blank" rel="noopener">打开链接</a>
+                  <button id="copy" class="secondary" type="button" disabled>复制链接</button>
+                </div>
+                <div class="row">
+                  <label id="mainLinkLabel">Checkout 短链</label>
+                  <code id="longUrl"></code>
+                </div>
+                <div id="checkoutRow" class="row" style="display:none">
+                  <label>普通短链 / Checkout URL</label>
+                  <code id="checkoutUrl"></code>
+                </div>
+                <div class="row">
+                  <label>地区 / 币种</label>
+                  <code id="summary"></code>
+                </div>
+                <div class="row">
+                  <label>提取状态</label>
+                  <code id="extractStatus"></code>
+                </div>
+                <div id="providerErrorRow" class="row" style="display:none">
+                  <label>Provider 状态</label>
+                  <code id="providerError"></code>
+                </div>
+                <div id="providerUrlRow" class="row" style="display:none">
+                  <label>Provider Redirect URL</label>
+                  <code id="providerUrl"></code>
+                </div>
+                <div id="previewRow" class="row" style="display:none">
+                  <label>二维码预览</label>
+                  <div id="previewMedia"></div>
+                </div>
+                <div id="stripeRedirectRow" class="row" style="display:none">
+                  <label>Stripe Redirect URL</label>
+                  <code id="stripeRedirectUrl"></code>
+                </div>
+                <div id="stripeUrlRow" class="row" style="display:none">
+                  <label>原始 Stripe URL</label>
+                  <code id="stripeUrl"></code>
+                </div>
+                <div id="pixQueueRow" class="row" style="display:none">
+                  <label id="queueRowLabel">PIX 二维码队列</label>
+                  <code id="pixQueueHint"></code>
+                </div>
+              </div>
+
+              <div style="display:none" aria-hidden="true">
+                <select id="checkoutMode">
+                  <option value="custom" selected>custom</option>
+                </select>
+                <select id="paymentLocale">
+                  <option value="pt-BR" selected>葡萄牙文</option>
+                  <option value="ko">韩文</option>
+                  <option value="de">德文</option>
+                  <option value="en">英文</option>
+                  <option value="id">印尼文</option>
+                </select>
+                <select id="billingCountry">
+                  <option value="BR" selected>巴西 BR</option>
+                  <option value="KR">韩国 KR</option>
+                  <option value="CH">瑞士 CH</option>
+                  <option value="IN">印度 IN</option>
+                  <option value="ID">印度尼西亚 ID</option>
+                </select>
+                <input id="currency" value="BRL" />
+                <input id="proxy" value="" />
+                <input id="stripeKey" value="" />
+                <input id="deviceId" value="" />
+                <input id="userAgent" value="" />
+                <input id="buyerTaxId" value="" />
+                <input id="usePromoParams" type="checkbox" checked />
+              </div>
+            </aside>
+
+            <section id="tasks" class="work-column">
+              <div class="work-block">
+                <div class="task-board-head">
+                  <div class="task-board-title">任务列表</div>
+                  <button id="refreshTasks" class="secondary" type="button">刷新列表</button>
+                </div>
+                <div class="task-summary">
+                  <div class="task-summary-card">
+                    <div class="task-summary-label">总任务</div>
+                    <div id="taskSummaryTotal" class="task-summary-value">0</div>
+                  </div>
+                  <div class="task-summary-card">
+                    <div class="task-summary-label">进行中</div>
+                    <div id="taskSummaryRunning" class="task-summary-value">0</div>
+                  </div>
+                  <div class="task-summary-card">
+                    <div class="task-summary-label">已完成</div>
+                    <div id="taskSummaryDone" class="task-summary-value">0</div>
+                  </div>
+                  <div class="task-summary-card">
+                    <div class="task-summary-label">已支付</div>
+                    <div id="taskSummaryPaid" class="task-summary-value">0</div>
+                  </div>
+                  <div class="task-summary-card">
+                    <div class="task-summary-label">支付失败</div>
+                    <div id="taskSummaryPaidFailed" class="task-summary-value">0</div>
+                  </div>
+                  <div class="task-summary-card">
+                    <div class="task-summary-label">失败</div>
+                    <div id="taskSummaryFailed" class="task-summary-value">0</div>
+                  </div>
+                </div>
+                <div id="taskEmpty" class="task-empty" style="display:none">当前没有任务记录</div>
+                <div class="task-list-wrap">
+                  <table class="task-table">
+                    <thead>
+                      <tr>
+                        <th>状态</th>
+                        <th>账号</th>
+                        <th>进度</th>
+                        <th>更新时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="taskRows"></tbody>
+                  </table>
+                </div>
+                <div class="task-pagination">
+                  <div id="taskPageInfo" class="task-pagination-info">第 1 页 / 共 1 页</div>
+                  <div class="task-pagination-actions">
+                    <button id="taskPrevPage" class="secondary" type="button">上一页</button>
+                    <button id="taskNextPage" class="secondary" type="button">下一页</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <section id="logModal" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="taskLogTitle">
+        <div class="modal-body">
+          <div class="modal-head">
+            <div>
+              <div id="taskLogTitle" class="task-log-title">任务日志</div>
+              <div id="taskLogMeta" class="task-log-meta"></div>
+            </div>
+            <div class="task-log-actions">
+              <button id="closeTaskLog" class="secondary" type="button">关闭</button>
+            </div>
+          </div>
+          <div id="taskLogList" class="task-log-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const COUNTRIES = [
+        ["US", "美国 US", "USD"],
+        ["GB", "英国 GB", "GBP"],
+        ["CA", "加拿大 CA", "CAD"],
+        ["AU", "澳大利亚 AU", "AUD"],
+        ["JP", "日本 JP", "JPY"],
+        ["SG", "新加坡 SG", "SGD"],
+        ["HK", "中国香港 HK", "HKD"],
+        ["TW", "中国台湾 TW", "TWD"],
+        ["KR", "韩国 KR", "KRW"],
+        ["ID", "印度尼西亚 ID", "IDR"],
+        ["MY", "马来西亚 MY", "MYR"],
+        ["TH", "泰国 TH", "THB"],
+        ["VN", "越南 VN", "VND"],
+        ["PH", "菲律宾 PH", "PHP"],
+        ["IN", "印度 IN", "INR"],
+        ["DE", "德国 DE", "EUR"],
+        ["FR", "法国 FR", "EUR"],
+        ["IT", "意大利 IT", "EUR"],
+        ["ES", "西班牙 ES", "EUR"],
+        ["NL", "荷兰 NL", "EUR"],
+        ["IE", "爱尔兰 IE", "EUR"],
+        ["PT", "葡萄牙 PT", "EUR"],
+        ["BE", "比利时 BE", "EUR"],
+        ["FI", "芬兰 FI", "EUR"],
+        ["AT", "奥地利 AT", "EUR"],
+        ["CH", "瑞士 CH", "CHF"],
+        ["SE", "瑞典 SE", "SEK"],
+        ["NO", "挪威 NO", "NOK"],
+        ["DK", "丹麦 DK", "DKK"],
+        ["PL", "波兰 PL", "PLN"],
+        ["CZ", "捷克 CZ", "CZK"],
+        ["MX", "墨西哥 MX", "MXN"],
+        ["BR", "巴西 BR", "BRL"],
+        ["NZ", "新西兰 NZ", "NZD"],
+      ];
+
+      const $ = (id) => document.getElementById(id);
+      const generateButton = $("generate");
+      const manualGenerateButton = $("manualGenerate");
+      const copyButton = $("copy");
+      const refreshTasksButton = $("refreshTasks");
+      const openLink = $("openLink");
+      const statusLine = $("status");
+      const taskRows = $("taskRows");
+      const taskEmpty = $("taskEmpty");
+      const PAGE_SCOPE = "admin";
+      let currentLongUrl = "";
+      let progressTimer = 0;
+      let taskListTimer = 0;
+      let taskListLoadSequence = 0;
+      let taskListActiveSequence = 0;
+      let selectedTaskId = "";
+      let taskCurrentPage = 1;
+      let taskTotalPages = 1;
+      const TASK_PAGE_SIZE = 10;
+      const ACTIVE_JOB_STORAGE_KEY = "openai_pay_long_link_active_jobs";
+      const LINE_CONFIG = {
+        pix: {
+          title: "巴西 PIX 线路",
+          icon: "BR",
+          linkLabel: "PIX 二维码（巴西 BRL）",
+          country: "BR",
+          currency: "BRL",
+          locale: "pt-BR",
+          promoEnabled: true,
+          resultLabel: "巴西 Checkout 短链",
+          statusText: "巴西 checkout 短链已生成",
+        },
+        korea: {
+          title: "韩国 KakaoPay 线路",
+          icon: "KR",
+          linkLabel: "KakaoPay 支付页（韩国 KRW）",
+          country: "KR",
+          currency: "KRW",
+          locale: "ko",
+          promoEnabled: false,
+          resultLabel: "韩国 KakaoPay 支付页",
+          statusText: "韩国 KakaoPay 支付页已生成",
+        },
+        swiss: {
+          title: "瑞士 Checkout 线路",
+          icon: "CH",
+          linkLabel: "瑞士线路（CH / CHF）",
+          country: "CH",
+          currency: "CHF",
+          locale: "de",
+          promoEnabled: true,
+          resultLabel: "瑞士 Checkout 短链",
+          statusText: "瑞士 checkout 短链已生成",
+        },
+        upi: {
+          title: "印度 UPI 线路",
+          icon: "IN",
+          linkLabel: "UPI 二维码（印度 INR）",
+          country: "IN",
+          currency: "INR",
+          locale: "en",
+          promoEnabled: true,
+          resultLabel: "印度 UPI 二维码",
+          statusText: "印度 UPI 二维码已生成",
+        },
+        ideal: {
+          title: "荷兰 iDEAL 线路",
+          icon: "NL",
+          linkLabel: "iDEAL 支付页（荷兰 EUR）",
+          country: "NL",
+          currency: "EUR",
+          locale: "nl",
+          promoEnabled: true,
+          resultLabel: "荷兰 iDEAL 支付页",
+          statusText: "荷兰 iDEAL 支付页已生成",
+        },
+        gopay: {
+          title: "印度尼西亚 GoPay 线路",
+          icon: "ID",
+          linkLabel: "GoPay 提交结果（印度尼西亚 IDR）",
+          country: "ID",
+          currency: "IDR",
+          locale: "id",
+          promoEnabled: true,
+          resultLabel: "GoPay Checkout 链接",
+          statusText: "印度尼西亚 GoPay 提交结果已返回",
+        },
+      };
+
+      function newJobId() {
+        const raw = window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+        return String(raw).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 80);
+      }
+
+      function setStatus(text, isError = false) {
+        statusLine.textContent = text;
+        statusLine.classList.toggle("error", isError);
+      }
+
+      function currentLineConfig() {
+        return LINE_CONFIG[$("linkType").value] || LINE_CONFIG.pix;
+      }
+
+      function currentConsoleView() {
+        const requested = String(new URLSearchParams(window.location.search).get("view") || "").trim().toLowerCase();
+        return requested === "tasks" || window.location.hash === "#tasks" ? "tasks" : "generate";
+      }
+
+      function publicProviderType(nativeType) {
+        return nativeType === "korea" ? "kakao_pay" : nativeType;
+      }
+
+      function applyProviderFromUrl() {
+        const requested = String(new URLSearchParams(window.location.search).get("provider") || "").trim().toLowerCase();
+        const nativeType = requested === "kakao_pay" ? "korea" : requested;
+        const option = Array.from($("linkType").options).find((item) => item.value === nativeType);
+        if (option) $("linkType").value = nativeType;
+      }
+
+      function syncProviderToUrl() {
+        const publicType = publicProviderType($("linkType").value);
+        const url = new URL(window.location.href);
+        url.searchParams.set("provider", publicType);
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+        window.dispatchEvent(new CustomEvent("paylink:provider-change", { detail: { publicType } }));
+      }
+
+      function applyLineConfig() {
+        const line = currentLineConfig();
+        const view = currentConsoleView();
+        const title = document.querySelector(".title-row h1");
+        const icon = document.querySelector(".title-icon");
+        document.body.dataset.paylinkSection = view;
+        if (title) title.textContent = view === "tasks" ? "任务中心" : line.title;
+        if (icon) icon.textContent = line.icon;
+        $("billingCountry").value = line.country;
+        $("currency").value = line.currency;
+        $("paymentLocale").value = line.locale;
+        $("usePromoParams").checked = Boolean(line.promoEnabled);
+      }
+
+      function redirectToLogin(scope = PAGE_SCOPE) {
+        const next = encodeURIComponent(window.location.pathname || "/");
+        window.location.href = `/login?scope=${encodeURIComponent(scope)}&next=${next}`;
+      }
+
+      async function readJsonResponse(response) {
+        const text = await response.text();
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch (_) {
+          return { detail: text || "响应不是有效 JSON" };
+        }
+      }
+
+      async function apiFetch(url, options = {}, scope = PAGE_SCOPE) {
+        const response = await fetch(url, {
+          cache: "no-store",
+          ...options,
+        });
+        if (response.status === 401) {
+          redirectToLogin(scope);
+          throw new Error("登录已失效");
+        }
+        return response;
+      }
+
+      function stopProgressPolling() {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = 0;
+        }
+      }
+
+      function saveActiveJobs(jobIds) {
+        if (!Array.isArray(jobIds) || !jobIds.length) {
+          localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+          return;
+        }
+        localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, JSON.stringify(jobIds));
+      }
+
+      function loadActiveJobs() {
+        const raw = localStorage.getItem(ACTIVE_JOB_STORAGE_KEY) || "";
+        if (!raw) return [];
+        try {
+          const data = JSON.parse(raw);
+          return Array.isArray(data) ? data.filter((item) => typeof item === "string" && item.trim()) : [];
+        } catch (_) {
+          localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+          return [];
+        }
+      }
+
+      function taskStatusLabel(item) {
+        if (item.error) return "失败";
+        if (item.done) return "已完成";
+        return "进行中";
+      }
+
+      function taskStatusClass(item) {
+        if (item.error) return "failed";
+        if (item.done) return "done";
+        return "running";
+      }
+
+      function formatDateTime(value) {
+        const n = Number(value || 0);
+        if (!Number.isFinite(n) || n <= 0) return "-";
+        return new Date(n * 1000).toLocaleString();
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function setTaskSummary(summary) {
+        const data = summary && typeof summary === "object" ? summary : {};
+        $("taskSummaryTotal").textContent = String(data.total ?? 0);
+        $("taskSummaryRunning").textContent = String(data.running ?? 0);
+        $("taskSummaryDone").textContent = String(data.done ?? 0);
+        $("taskSummaryFailed").textContent = String(data.failed ?? 0);
+      }
+
+      function setTaskPagination(page, totalPages) {
+        taskCurrentPage = Math.max(1, Number(page || 1) || 1);
+        taskTotalPages = Math.max(1, Number(totalPages || 1) || 1);
+        $("taskPageInfo").textContent = `第 ${taskCurrentPage} 页 / 共 ${taskTotalPages} 页`;
+        $("taskPrevPage").disabled = taskCurrentPage <= 1;
+        $("taskNextPage").disabled = taskCurrentPage >= taskTotalPages;
+      }
+
+      function renderTaskRow(item) {
+        const result = item.result && typeof item.result === "object" ? item.result : {};
+        const percent = Math.max(0, Math.min(100, Number(item.percent || 0)));
+        const accountEmail = result.claimed_account_email || "";
+        const statusClass = taskStatusClass(item);
+        const taskText = item.text || "";
+        const updatedAt = formatDateTime(item.updated_at || 0);
+        const resultLink = resolveTaskResultLink(result);
+        const taskSummary = [
+          result.link_type || "",
+          result.billing_country || "",
+          result.currency || "",
+          result.approval_result || "",
+          result.submission_state || "",
+        ].filter(Boolean).join(" / ");
+        return `
+          <tr class="task-row ${statusClass} ${selectedTaskId === item.job_id ? "selected" : ""}" data-task-row="${escapeHtml(item.job_id || "")}" data-open-task-log="${escapeHtml(item.job_id || "")}">
+            <td><span class="task-badge ${statusClass}">${taskStatusLabel(item)}</span></td>
+            <td>
+              <div>${escapeHtml(accountEmail || "-")}</div>
+              <div class="task-id">${escapeHtml(item.job_id || "")}</div>
+            </td>
+            <td>
+              <div class="task-status-stack">
+                <div class="task-mini-track"><div class="task-mini-fill" style="width:${percent}%"></div></div>
+                <div class="task-status-text">${percent}% / ${escapeHtml(taskText)}</div>
+                ${taskSummary ? `<div class="task-status-text">${escapeHtml(taskSummary)}</div>` : ""}
+                ${resultLink ? `<div class="task-id">${escapeHtml(resultLink)}</div>` : ""}
+              </div>
+            </td>
+            <td>${escapeHtml(updatedAt)}</td>
+            <td>
+              <div class="task-actions">
+                <button type="button" data-open-task-log="${escapeHtml(item.job_id || "")}">日志</button>
+                ${item.done ? `<button type="button" data-delete-task="${escapeHtml(item.job_id || "")}">删除</button>` : ""}
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
+      function renderTaskLogsModal(task, items) {
+        $("taskLogTitle").textContent = `任务日志 ${task.job_id || "-"}`;
+        $("taskLogMeta").textContent = `${taskStatusLabel(task)} / ${formatDateTime(task.updated_at || 0)}`;
+        const list = $("taskLogList");
+        if (!items.length) {
+          list.innerHTML = '<div class="task-empty">当前没有日志记录</div>';
+        } else {
+          list.innerHTML = items.map((item) => `
+            <div class="task-log-item ${String(item.status || "").toLowerCase() === "failed" ? "failed" : ""}">
+              <div class="task-log-item-head">
+                <div class="task-log-kind">${escapeHtml(item.kind || "-")}</div>
+                <div class="task-log-time">${escapeHtml(formatDateTime(item.ts || 0))}</div>
+              </div>
+              <div class="task-log-message">${escapeHtml(item.message || "-")}</div>
+              ${(item.cs_id || item.job_id || item.status) ? `<div class="task-log-message">${escapeHtml([item.status || "", item.cs_id || "", item.job_id || ""].filter(Boolean).join(" / "))}</div>` : ""}
+            </div>
+          `).join("");
+        }
+        $("logModal").classList.remove("hidden");
+        $("logModal").setAttribute("aria-hidden", "false");
+      }
+
+      async function openTaskLog(jobId) {
+        if (!jobId) return;
+        selectedTaskId = String(jobId);
+        refreshTaskList();
+        try {
+          const response = await apiFetch(`/api/tasks/logs?job_id=${encodeURIComponent(jobId)}&limit=200`);
+          const data = await readJsonResponse(response);
+          if (!response.ok) {
+            throw new Error(data.detail || `日志加载失败 (${response.status})`);
+          }
+          const task = data.task && typeof data.task === "object" ? data.task : {};
+          const items = Array.isArray(data.items) ? data.items : [];
+          renderTaskLogsModal(task, items);
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error), true);
+        }
+      }
+
+      function closeTaskLogPanel() {
+        selectedTaskId = "";
+        $("logModal").classList.add("hidden");
+        $("logModal").setAttribute("aria-hidden", "true");
+        $("taskLogList").innerHTML = "";
+        refreshTaskList(taskCurrentPage);
+      }
+
+      function renderTaskTable(items, summary = {}, page = 1, totalPages = 1) {
+        const rows = Array.isArray(items) ? items : [];
+        setTaskSummary(summary);
+        setTaskPagination(page, totalPages);
+        if (!rows.length) {
+          taskRows.innerHTML = "";
+          taskEmpty.style.display = "block";
+          return;
+        }
+        taskEmpty.style.display = "none";
+        taskRows.innerHTML = rows.map(renderTaskRow).join("");
+        taskRows.querySelectorAll("tr[data-open-task-log]").forEach((row) => {
+          row.addEventListener("click", (event) => {
+            const target = event.target;
+            if (target instanceof HTMLElement && target.closest("button")) return;
+            const jobId = row.getAttribute("data-open-task-log") || "";
+            openTaskLog(jobId);
+          });
+        });
+        taskRows.querySelectorAll("button[data-open-task-log]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const jobId = button.getAttribute("data-open-task-log") || "";
+            openTaskLog(jobId);
+          });
+        });
+        taskRows.querySelectorAll("button[data-delete-task]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const jobId = button.getAttribute("data-delete-task") || "";
+            if (!jobId) return;
+            try {
+              const response = await apiFetch("/api/tasks/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId }),
+              });
+              const data = await readJsonResponse(response);
+              if (!response.ok) {
+                throw new Error(data.detail || `删除失败 (${response.status})`);
+              }
+              if (selectedTaskId === jobId) {
+                closeTaskLogPanel();
+              }
+              refreshTaskList();
+            } catch (error) {
+              setStatus(error instanceof Error ? error.message : String(error), true);
+            }
+          });
+        });
+      }
+
+      async function refreshTaskList(page = taskCurrentPage) {
+        try {
+          const requestedPage = Number(page);
+          const currentPage = Number.isFinite(requestedPage) && requestedPage > 0
+            ? Math.max(1, Math.floor(requestedPage))
+            : taskCurrentPage;
+          taskCurrentPage = currentPage;
+          const sequence = taskListLoadSequence + 1;
+          taskListLoadSequence = sequence;
+          taskListActiveSequence = sequence;
+          const response = await apiFetch(`/api/tasks?page=${encodeURIComponent(currentPage)}&page_size=${encodeURIComponent(TASK_PAGE_SIZE)}`);
+          if (!response.ok) return;
+          const data = await readJsonResponse(response);
+          if (taskListActiveSequence !== sequence) return;
+          const items = Array.isArray(data.items) ? data.items : [];
+          renderTaskTable(items, data.summary || {}, data.page || currentPage, data.total_pages || 1);
+        } catch (_) {}
+      }
+
+      function renderServiceStats(data) {
+        if (!data || typeof data !== "object") return;
+        $("taskSummaryPaid").textContent = String(data.paid_total ?? 0);
+        $("taskSummaryPaidFailed").textContent = String(data.paid_failed_total ?? 0);
+      }
+
+      async function refreshServiceStats() {
+        try {
+          const response = await apiFetch("/api/stats");
+          if (!response.ok) return;
+          renderServiceStats(await readJsonResponse(response));
+        } catch (_) {}
+      }
+
+      async function loadServerPixSession() {
+        const response = await apiFetch("/api/pix/pending?limit=1", {}, "qr");
+        const data = await readJsonResponse(response);
+        if (!response.ok) return null;
+        const items = Array.isArray(data.items) ? data.items : [];
+        return items.length ? items[0] : null;
+      }
+
+      function setProgress(percent, text, isError = false) {
+        const value = Math.max(0, Math.min(100, Number(percent || 0)));
+        $("progressCard").style.display = "block";
+        $("progressCard").classList.toggle("error", isError);
+        $("progressFill").style.width = `${value}%`;
+        $("progressPercent").textContent = `${Math.round(value)}%`;
+        $("progressTitle").textContent = text || "处理中...";
+        const steps = [
+          ["progressStepToken", 0, 18],
+          ["progressStepProxy", 18, 32],
+          ["progressStepOpenAI", 32, 62],
+          ["progressStepStripe", 62, 88],
+          ["progressStepRewrite", 88, 101],
+        ];
+        for (const [id, start, end] of steps) {
+          const node = $(id);
+          node.classList.toggle("done", value >= end || value >= 100);
+          node.classList.toggle("active", value >= start && value < end && value < 100);
+        }
+      }
+
+      function isProviderQueueLine(linkType) {
+        return ["korea", "swiss", "upi"].includes(String(linkType || "").trim());
+      }
+
+      function hasProviderPaymentPage(data) {
+        return Boolean(String(data.provider_redirect_url || data.provider_qr_url || data.provider_qr_svg || "").trim());
+      }
+
+      function walletLineNeedsProviderLink(linkType) {
+        return ["gopay", "gcash", "grabpay"].includes(String(linkType || "").trim());
+      }
+
+      function resolveTaskResultLink(data) {
+        const providerUrl = String(data.provider_redirect_url || "").trim();
+        if (providerUrl) return providerUrl;
+        const providerQrUrl = String(data.provider_qr_url || "").trim();
+        if (providerQrUrl) return providerQrUrl;
+        if (walletLineNeedsProviderLink(data.link_type)) return "";
+        const longUrl = String(data.long_url || "").trim();
+        if (longUrl) return longUrl;
+        return String(data.checkout_url || "").trim();
+      }
+
+      function resolvePrimaryResultLink(data) {
+        const providerUrl = String(data.provider_redirect_url || "").trim();
+        if (providerUrl) return providerUrl;
+        const providerQrUrl = String(data.provider_qr_url || "").trim();
+        if (providerQrUrl) return providerQrUrl;
+        if (walletLineNeedsProviderLink(data.link_type)) return "";
+        const longUrl = String(data.long_url || "").trim();
+        if (longUrl) return longUrl;
+        return String(data.checkout_url || "").trim();
+      }
+
+      function resolveMainLinkLabel(data, line, providerReady) {
+        if (data.link_type === "gopay" && providerReady) return "GoPay 跳转链接";
+        if (data.link_type === "gopay") return "GoPay 跳转链接";
+        if (providerReady) {
+          if (data.link_type === "pix") return "PIX 支付页";
+          return line.resultLabel;
+        }
+        if (isProviderQueueLine(data.link_type)) return "Hosted Checkout 回退链接";
+        return line.resultLabel;
+      }
+
+      function resolveOpenLinkText(data, providerReady) {
+        if (data.link_type === "gopay" && providerReady) return "打开 GoPay";
+        if (data.link_type === "gopay") return "等待 GoPay";
+        if (providerReady && data.link_type === "upi") return "查看二维码";
+        if (providerReady) return "打开支付页";
+        const checkoutUrl = String(data.checkout_url || "").trim();
+        const primaryLink = resolvePrimaryResultLink(data);
+        if (checkoutUrl && primaryLink === checkoutUrl) return "打开 Checkout";
+        return "打开短链";
+      }
+
+      function resolveCopyLinkText(data, providerReady) {
+        if (data.link_type === "gopay" && providerReady) return "复制 GoPay";
+        if (data.link_type === "gopay") return "等待 GoPay";
+        if (providerReady && data.link_type === "upi") return "复制二维码内容";
+        if (providerReady) return "复制支付页";
+        const checkoutUrl = String(data.checkout_url || "").trim();
+        const primaryLink = resolvePrimaryResultLink(data);
+        if (checkoutUrl && primaryLink === checkoutUrl) return "复制 Checkout";
+        return "复制短链";
+      }
+
+      function resolveExtractStatus(data, line, failureCount, providerReady) {
+        if (failureCount) return `部分成功，失败 ${failureCount} 个`;
+        if (data.link_type === "gopay") {
+          const approvalResult = String(data.approval_result || "").trim() || "-";
+          const submissionState = String(data.submission_state || "").trim() || "-";
+          if (approvalResult !== "approved") {
+            return `GoPay 未成功：提交状态=${submissionState} / approval结果=${approvalResult}`;
+          }
+          if (!providerReady) {
+            return `GoPay 未成功：approval 已通过，但未拿到跳转链接`;
+          }
+          return `提交状态=${submissionState} / approval结果=${approvalResult}`;
+        }
+        const providerError = String(data.provider_error || "").trim();
+        if (providerError && data.link_type === "upi") return `二维码未拿到：${providerError}`;
+        if (providerError) return `支付页未拿到：${providerError}`;
+        if (data.fallback) return "已回退 hosted，详情见任务日志";
+        if (providerReady && data.link_type === "pix") return "PIX 支付页已生成";
+        if (!providerReady && data.link_type === "upi") return "UPI 二维码暂未拿到，当前仅返回 Checkout 链接";
+        if (!providerReady && isProviderQueueLine(data.link_type)) return "支付页暂未拿到，当前仅返回 Checkout 链接";
+        return line.statusText;
+      }
+
+      function resolveQueueMessage(data, providerReady) {
+        if (!providerReady) return "";
+        if (data.link_type === "pix") return "检测到未完成的 PIX 会话，请到 /qr 页面查看队列。";
+        if (data.link_type === "korea") return "检测到韩国支付会话，请到 /kr-qr 页面查看队列。";
+        if (data.link_type === "swiss") return "检测到瑞士支付会话，请到 /ch-qr 页面查看队列。";
+        if (data.link_type === "upi") return "检测到印度 UPI 二维码会话，请到 /in-qr 页面查看队列。";
+        return "";
+      }
+
+      function resolveQueueLabel(data) {
+        if (data.link_type === "korea") return "韩国支付队列";
+        if (data.link_type === "swiss") return "瑞士支付队列";
+        if (data.link_type === "upi") return "印度 UPI 队列";
+        return "PIX 二维码队列";
+      }
+
+      function isHttpUrl(value) {
+        return /^https?:\/\//i.test(String(value || "").trim());
+      }
+
+      function renderResultPreview(data) {
+        const row = $("previewRow");
+        const media = $("previewMedia");
+        const qrSvg = String(data.provider_qr_svg || "").trim();
+        const qrUrl = String(data.provider_qr_url || "").trim();
+        if (qrSvg) {
+          media.innerHTML = qrSvg;
+          row.style.display = "grid";
+          return;
+        }
+        if (qrUrl && isHttpUrl(qrUrl)) {
+          media.innerHTML = `<img class="pix-qr-image" src="${qrUrl}" alt="二维码预览" loading="lazy" referrerpolicy="no-referrer" />`;
+          row.style.display = "grid";
+          return;
+        }
+        if (qrUrl) {
+          media.innerHTML = `<code>${qrUrl}</code>`;
+          row.style.display = "grid";
+          return;
+        }
+        media.innerHTML = "";
+        row.style.display = "none";
+      }
+
+      function applyResultData(data, { successCount = 1, failureCount = 0, modeText = "生产" } = {}) {
+        const line = currentLineConfig();
+        const providerReady = hasProviderPaymentPage(data);
+        currentLongUrl = resolvePrimaryResultLink(data);
+        $("longUrl").textContent = currentLongUrl;
+        $("mainLinkLabel").textContent = resolveMainLinkLabel(data, line, providerReady);
+        openLink.textContent = resolveOpenLinkText(data, providerReady);
+        copyButton.textContent = resolveCopyLinkText(data, providerReady);
+        setRowValue("checkoutRow", "checkoutUrl", data.checkout_url || "");
+        $("summary").textContent = `${data.billing_country || "-"} / ${data.currency || "-"} / ${data.link_type || "-"} / ${successCount}/${successCount + failureCount} 成功`;
+        $("extractStatus").textContent = resolveExtractStatus(data, line, failureCount, providerReady);
+        setRowValue("providerErrorRow", "providerError", data.provider_error || "");
+        setRowValue("providerUrlRow", "providerUrl", data.provider_redirect_url || data.provider_qr_url || "");
+        renderResultPreview(data);
+        setRowValue("stripeRedirectRow", "stripeRedirectUrl", data.stripe_redirect_url || "");
+        setRowValue("stripeUrlRow", "stripeUrl", data.stripe_hosted_url || "");
+        const queueMessage = resolveQueueMessage(data, providerReady);
+        $("queueRowLabel").textContent = resolveQueueLabel(data);
+        setRowValue("pixQueueRow", "pixQueueHint", queueMessage);
+        $("result").classList.add("show");
+        setLinkEnabled(Boolean(currentLongUrl));
+        const doneText = data.link_type === "gopay" ? (providerReady ? "GoPay 跳转链接已返回" : "GoPay 未成功") : "生成完成";
+        setStatus(`${modeText}完成：成功 ${successCount} 个，失败 ${failureCount} 个。`);
+        setProgress(100, doneText, Boolean(data.link_type === "gopay" && !providerReady));
+      }
+
+      async function fetchProgressItems(jobIds) {
+        const response = await apiFetch(`/api/checkout-progress-many?job_ids=${encodeURIComponent(jobIds.join(","))}`);
+        if (!response.ok) return [];
+        const data = await readJsonResponse(response);
+        return Array.isArray(data.items) ? data.items : [];
+      }
+
+      async function refreshProgressBatch(jobIds) {
+        const items = await fetchProgressItems(jobIds);
+        const validItems = items.filter((item) => item && item.ok);
+        if (!validItems.length) return false;
+
+        const primary = validItems[0];
+        setProgress(primary.percent || 0, primary.text || "处理中...", Boolean(primary.error));
+
+        const doneItems = validItems.filter((item) => item.done);
+        if (doneItems.length !== validItems.length) return false;
+
+        const successItems = doneItems.filter((item) => !item.error && item.result && typeof item.result === "object");
+        const failedItems = doneItems.filter((item) => item.error);
+
+        if (successItems.length) {
+          applyResultData(successItems[0].result, {
+            successCount: successItems.length,
+            failureCount: failedItems.length,
+            modeText: "生产",
+          });
+        } else if (failedItems.length) {
+          currentLongUrl = "";
+          setStatus(failedItems[0].text || "任务失败", true);
+          setProgress(100, failedItems[0].text || "任务失败", true);
+        }
+        saveActiveJobs([]);
+        return true;
+      }
+
+      function startProgressPolling(jobIds) {
+        stopProgressPolling();
+        saveActiveJobs(jobIds);
+        setProgress(4, "读取 Token", false);
+        progressTimer = setInterval(async () => {
+          try {
+            const finished = await refreshProgressBatch(jobIds);
+            if (finished) stopProgressPolling();
+          } catch (_) {}
+        }, 650);
+      }
+
+      function base64UrlDecode(value) {
+        const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+        return decodeURIComponent(
+          atob(padded)
+            .split("")
+            .map((char) => "%" + ("00" + char.charCodeAt(0).toString(16)).slice(-2))
+            .join(""),
+        );
+      }
+
+      function findToken(value) {
+        if (!value) return "";
+        if (typeof value === "string") return value.trim();
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            const token = findToken(item);
+            if (token) return token;
+          }
+        }
+        if (typeof value === "object") {
+          for (const key of ["accessToken", "access_token", "token"]) {
+            if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+          }
+          for (const item of Object.values(value)) {
+            const token = findToken(item);
+            if (token) return token;
+          }
+        }
+        return "";
+      }
+
+      function readAccessTokenInput() {
+        const raw = $("accessToken").value.trim();
+        if (!raw) return "";
+        if (raw.startsWith("{") || raw.startsWith("[")) {
+          try {
+            return findToken(JSON.parse(raw)) || raw;
+          } catch {
+            return raw;
+          }
+        }
+        return raw;
+      }
+
+      function updateTokenMeta() {
+        const token = readAccessTokenInput();
+        if (!token.includes(".")) {
+          $("tokenMeta").textContent = "";
+          return;
+        }
+        try {
+          const payload = JSON.parse(base64UrlDecode(token.split(".")[1] || ""));
+          const profile = payload["https://api.openai.com/profile"] || {};
+          const email = profile.email || payload.email || "";
+          $("tokenMeta").textContent = email ? `已识别 token，可能关联邮箱：${email}` : "已识别 token";
+        } catch {
+          $("tokenMeta").textContent = "";
+        }
+      }
+
+      function saveZcConfig() {
+        localStorage.setItem("openai_pay_long_link_concurrency", $("concurrency").value.trim() || "1");
+        localStorage.setItem("openai_pay_long_link_total_count", $("totalCount").value.trim() || "1");
+      }
+
+      function loadZcConfig() {
+        $("concurrency").value = localStorage.getItem("openai_pay_long_link_concurrency") || "1";
+        $("totalCount").value = localStorage.getItem("openai_pay_long_link_total_count") || "1";
+      }
+
+      function setRowValue(rowId, codeId, value) {
+        const row = $(rowId);
+        const code = $(codeId);
+        if (!row || !code) return;
+        const text = String(value || "");
+        code.textContent = text;
+        row.style.display = text ? "grid" : "none";
+      }
+
+      async function runTaskPool(jobIds, concurrency, runner, onSettled) {
+        const results = new Array(jobIds.length);
+        let cursor = 0;
+
+        async function worker() {
+          while (true) {
+            const index = cursor;
+            cursor += 1;
+            if (index >= jobIds.length) return;
+            const jobId = jobIds[index];
+            try {
+              const value = await runner(jobId, index);
+              results[index] = { status: "fulfilled", value };
+              onSettled(index, true, value);
+            } catch (error) {
+              results[index] = { status: "rejected", reason: error };
+              onSettled(index, false, error);
+            }
+          }
+        }
+
+        const workerCount = Math.max(1, Math.min(concurrency, jobIds.length));
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
+        return results;
+      }
+
+      function setLinkEnabled(enabled) {
+        copyButton.disabled = !enabled;
+        openLink.classList.toggle("disabled", !enabled);
+        openLink.href = enabled ? currentLongUrl : "";
+      }
+
+      async function runSingleGenerate({ jobId, accessToken, autoClaimZc }) {
+        const response = await apiFetch("/api/long-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accessToken,
+            autoClaimZc,
+            link_type: $("linkType").value,
+            proxy: $("proxy").value.trim(),
+            billing_country: $("billingCountry").value,
+            checkout_ui_mode: $("checkoutMode").value,
+            payment_locale: $("paymentLocale").value,
+            use_promo_params: $("usePromoParams").checked,
+            job_id: jobId,
+            stripe_publishable_key: $("stripeKey").value.trim(),
+            device_id: $("deviceId").value.trim(),
+            user_agent: $("userAgent").value.trim(),
+            buyerTaxId: $("buyerTaxId").value.trim(),
+          }),
+        });
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw new Error(data.detail || data.error_type || `请求失败 (${response.status})`);
+        }
+        return data;
+      }
+
+      async function runGenerateFlow({ autoClaimZc, accessToken }) {
+        const concurrency = Math.max(1, Math.min(20, Number($("concurrency").value || "1") || 1));
+        const totalCount = autoClaimZc
+          ? Math.max(1, Math.min(200, Number($("totalCount").value || "1") || 1))
+          : 1;
+        if (!autoClaimZc && !accessToken) {
+          setStatus("手动 AT 生成需要先填写 Access Token。", true);
+          return;
+        }
+
+        generateButton.disabled = true;
+        manualGenerateButton.disabled = true;
+        setLinkEnabled(false);
+        setStatus(autoClaimZc ? `正在生产，计划 ${totalCount} 个任务...` : "正在用手动 AT 生成...");
+
+        try {
+          $("progressCard").style.display = "block";
+          const jobIds = Array.from({ length: totalCount }, () => newJobId());
+          saveActiveJobs(jobIds);
+          let completedCount = 0;
+          let successCountLive = 0;
+          let failureCountLive = 0;
+          setProgress(2, `准备提交 0/${jobIds.length}`, false);
+          const settled = await runTaskPool(
+            jobIds,
+            concurrency,
+            (jobId) => runSingleGenerate({ jobId, accessToken, autoClaimZc }),
+            (_, ok) => {
+              completedCount += 1;
+              if (ok) successCountLive += 1;
+              else failureCountLive += 1;
+              const percent = Math.max(5, Math.min(99, Math.round((completedCount / jobIds.length) * 100)));
+              setProgress(
+                percent,
+                `已完成 ${completedCount}/${jobIds.length}，成功 ${successCountLive}，失败 ${failureCountLive}`,
+                false,
+              );
+              refreshTaskList();
+            },
+          );
+
+          const successResults = settled
+            .filter((item) => item.status === "fulfilled")
+            .map((item) => item.value);
+          const failedResults = settled
+            .filter((item) => item.status === "rejected")
+            .map((item) => item.reason instanceof Error ? item.reason.message : String(item.reason));
+
+          if (!successResults.length) {
+            throw new Error(failedResults[0] || "全部任务失败");
+          }
+
+          const data = successResults[0];
+          applyResultData(data, {
+            successCount: successResults.length,
+            failureCount: failedResults.length,
+            modeText: autoClaimZc ? "生产" : "手动生成",
+          });
+          saveActiveJobs([]);
+          refreshTaskList();
+        } catch (error) {
+          currentLongUrl = "";
+          setStatus(error instanceof Error ? error.message : String(error), true);
+          setProgress(100, error instanceof Error ? error.message : String(error), true);
+          saveActiveJobs([]);
+          refreshTaskList();
+        } finally {
+          generateButton.disabled = false;
+          manualGenerateButton.disabled = false;
+        }
+      }
+
+      async function generate() {
+        return runGenerateFlow({ autoClaimZc: true, accessToken: "" });
+      }
+
+      async function manualGenerate() {
+        return runGenerateFlow({ autoClaimZc: false, accessToken: readAccessTokenInput() });
+      }
+
+      async function copyLink() {
+        if (!currentLongUrl) return;
+        await navigator.clipboard.writeText(currentLongUrl);
+        setStatus("已复制。");
+      }
+
+      $("copySessionUrl").addEventListener("click", async () => {
+        const url = "https://chatgpt.com/api/auth/session";
+        try {
+          await navigator.clipboard.writeText(url);
+          $("copySessionUrl").textContent = "已复制";
+          setTimeout(() => {
+            $("copySessionUrl").textContent = "复制 Session 地址";
+          }, 1400);
+        } catch (_) {
+          $("copySessionUrl").textContent = "复制失败";
+          setTimeout(() => {
+            $("copySessionUrl").textContent = "复制 Session 地址";
+          }, 1400);
+        }
+      });
+      $("logoutLink").addEventListener("click", async (event) => {
+        event.preventDefault();
+        try {
+          await apiFetch("/api/auth/logout", { method: "POST" });
+        } catch (_) {}
+        redirectToLogin(PAGE_SCOPE);
+      });
+
+      loadZcConfig();
+      applyProviderFromUrl();
+      applyLineConfig();
+      refreshServiceStats();
+      refreshTaskList();
+      (async () => {
+        const pendingPix = await loadServerPixSession();
+        if (pendingPix && pendingPix.csId) {
+          setRowValue("pixQueueRow", "pixQueueHint", "检测到未完成的 PIX 会话，请到 /qr 页面查看队列。");
+        } else {
+          setRowValue("pixQueueRow", "pixQueueHint", "");
+        }
+        const activeJobs = loadActiveJobs();
+        if (activeJobs.length) {
+          generateButton.disabled = true;
+          manualGenerateButton.disabled = true;
+          $("result").classList.remove("show");
+          setStatus("检测到未完成任务，正在恢复进度...");
+          const finished = await refreshProgressBatch(activeJobs);
+          if (!finished) {
+            startProgressPolling(activeJobs);
+          } else {
+            generateButton.disabled = false;
+            manualGenerateButton.disabled = false;
+          }
+        }
+      })();
+      setInterval(refreshServiceStats, 30000);
+      taskListTimer = setInterval(() => refreshTaskList(taskCurrentPage), 2500);
+      $("accessToken").addEventListener("input", updateTokenMeta);
+      $("linkType").addEventListener("change", () => {
+        applyLineConfig();
+        syncProviderToUrl();
+      });
+      $("concurrency").addEventListener("change", saveZcConfig);
+      manualGenerateButton.addEventListener("click", manualGenerate);
+      generateButton.addEventListener("click", generate);
+      copyButton.addEventListener("click", copyLink);
+      refreshTasksButton.addEventListener("click", () => refreshTaskList(taskCurrentPage));
+      $("taskPrevPage").addEventListener("click", () => {
+        if (taskCurrentPage <= 1) return;
+        refreshTaskList(taskCurrentPage - 1);
+      });
+      $("taskNextPage").addEventListener("click", () => {
+        if (taskCurrentPage >= taskTotalPages) return;
+        refreshTaskList(taskCurrentPage + 1);
+      });
+      $("closeTaskLog").addEventListener("click", closeTaskLogPanel);
+      $("logModal").addEventListener("click", (event) => {
+        if (event.target === $("logModal")) closeTaskLogPanel();
+      });
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("logModal").classList.contains("hidden")) closeTaskLogPanel();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,217 @@
+:root {
+  --paylink-shell-ink: #171717;
+  --paylink-shell-muted: #667085;
+  --paylink-shell-line: #dfe3e8;
+  --paylink-shell-surface: #ffffff;
+  --paylink-shell-soft: #f4f5f7;
+  --paylink-shell-provider: #087f5b;
+}
+
+.paylink-app-shell {
+  width: min(1380px, calc(100vw - 32px));
+  margin: 18px auto 0;
+  color: var(--paylink-shell-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.paylink-app-shell,
+.paylink-app-shell * {
+  box-sizing: border-box;
+}
+
+.paylink-app-shell__primary,
+.paylink-app-shell__providers {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.paylink-app-shell__primary {
+  gap: 18px;
+  min-height: 54px;
+  border-bottom: 1px solid var(--paylink-shell-line);
+}
+
+.paylink-app-shell__brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--paylink-shell-ink);
+  font-size: 17px;
+  font-weight: 850;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.paylink-app-shell__global,
+.paylink-app-shell__provider-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.paylink-app-shell__global {
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.paylink-app-shell__link,
+.paylink-app-shell__provider-link,
+.paylink-app-shell__logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475467;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.paylink-app-shell__link {
+  padding: 0 11px;
+}
+
+.paylink-app-shell__link:hover,
+.paylink-app-shell__provider-link:hover,
+.paylink-app-shell__logout:hover {
+  background: var(--paylink-shell-soft);
+  color: var(--paylink-shell-ink);
+}
+
+.paylink-app-shell__link.is-active {
+  background: var(--paylink-shell-ink);
+  color: #ffffff;
+}
+
+.paylink-app-shell__logout {
+  flex: 0 0 auto;
+  min-width: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--paylink-shell-line);
+  cursor: pointer;
+}
+
+.paylink-app-shell__providers {
+  gap: 14px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--paylink-shell-line);
+}
+
+.paylink-app-shell__provider-label {
+  flex: 0 0 auto;
+  color: var(--paylink-shell-muted);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.paylink-app-shell__provider-list {
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.paylink-app-shell__provider-link {
+  position: relative;
+  min-height: 47px;
+  padding: 0 12px;
+  border-radius: 0;
+}
+
+.paylink-app-shell__provider-link.is-active {
+  color: var(--paylink-shell-provider);
+}
+
+.paylink-app-shell__provider-link.is-active::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 3px;
+  background: var(--paylink-shell-provider);
+  content: "";
+}
+
+.paylink-shell-ready .site-nav,
+.paylink-shell-ready .nav[aria-label="主菜单"],
+.paylink-shell-ready .upi-header .upi-nav {
+  display: none !important;
+}
+
+.paylink-shell-ready > .page,
+.paylink-shell-ready > main.page,
+.paylink-shell-ready > main.upi-shell {
+  padding-top: 16px;
+}
+
+.paylink-shell-ready .work-block {
+  width: 100%;
+  min-width: 0;
+}
+
+.paylink-shell-ready[data-paylink-section="generate"] #tasks {
+  display: none;
+}
+
+.paylink-shell-ready[data-paylink-section="tasks"] .control-column {
+  display: none;
+}
+
+.paylink-shell-ready[data-paylink-section="tasks"] .console-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 720px) {
+  .paylink-app-shell {
+    width: calc(100vw - 20px);
+    margin-top: 10px;
+  }
+
+  .paylink-app-shell__primary {
+    gap: 8px;
+  }
+
+  .paylink-app-shell__brand {
+    display: none;
+  }
+
+  .paylink-app-shell__global {
+    padding-bottom: 3px;
+  }
+
+  .paylink-app-shell__providers {
+    gap: 6px;
+  }
+
+  .paylink-shell-ready .shell {
+    width: 100%;
+  }
+
+  .paylink-app-shell__provider-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+}

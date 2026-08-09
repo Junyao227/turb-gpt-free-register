@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fila de QR PIX</title>
+    <link rel="stylesheet" href="/assets/qr.css?v=20260607-0148" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body>
+    <main class="page">
+      <div class="topbar">
+        <div>
+          <h1 id="pageTitle">Fila de QR PIX</h1>
+          <ol id="pageHint" class="muted page-hint-list">
+            <li id="pageHintLine1">Abaixo estao os pedidos disponiveis para pagamento.</li>
+            <li id="pageHintLine2">Use o aplicativo do seu banco para escanear o QR Code abaixo e concluir o pagamento. Se nao conseguir escanear, abra a pagina de pagamento Stripe abaixo.</li>
+            <li id="pageHintLine3">Apos o pagamento, o pedido desaparecera automaticamente desta pagina em ate 30 segundos, sem necessidade de confirmacao manual.</li>
+          </ol>
+        </div>
+        <div class="actions">
+          <div class="language-switch" aria-label="Language switch">
+            <button id="langPt" type="button">PT</button>
+            <button id="langZh" type="button">中文</button>
+          </div>
+          <button id="refresh" type="button">Atualizar fila</button>
+          <button id="logout" class="secondary" type="button">Sair</button>
+        </div>
+      </div>
+
+      <div id="status" class="status">Carregando fila...</div>
+      <div id="queue" class="queue"></div>
+    </main>
+
+    <script src="/assets/qr-i18n.js?v=20260607-0148"></script>
+    <script src="/assets/qr.js?v=20260607-0148"></script>
+  </body>
+</html>

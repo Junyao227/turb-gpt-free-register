@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>印度尼西亚 GoPay 队列</title>
+    <link rel="stylesheet" href="/assets/qr.css?v=20260615-id-gopay" />
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body data-provider-page="gopay">
+    <main class="page">
+      <div class="topbar">
+        <div>
+          <h1 id="pageTitle">印度尼西亚 GoPay 队列</h1>
+          <ol id="pageHint" class="muted page-hint-list">
+            <li id="pageHintLine1">以下是可打开的印度尼西亚 GoPay 支付订单。</li>
+            <li id="pageHintLine2">点击支付页按钮后，将打开真实 GoPay provider 支付页面。</li>
+            <li id="pageHintLine3">支付完成后可手动删除，或等待后续状态流转接入。</li>
+          </ol>
+        </div>
+        <div class="actions">
+          <button id="refresh" type="button">刷新队列</button>
+          <button id="clearTerminal" class="secondary" type="button">清理终态</button>
+          <button id="logout" class="secondary" type="button">退出</button>
+        </div>
+      </div>
+
+      <div id="status" class="status">正在加载印度尼西亚 GoPay 队列...</div>
+      <div id="queue" class="queue"></div>
+    </main>
+
+    <script src="/assets/provider-qr.js?v=20260615-id-gopay"></script>
+  </body>
+</html>

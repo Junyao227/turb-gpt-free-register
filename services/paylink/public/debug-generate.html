@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>印度线路调试</title>
+    <style>
+      :root { color-scheme: light; --bg:#f5f6f8; --panel:#fff; --ink:#111827; --muted:#667085; --line:#d9dee7; --soft:#eef2f6; --accent:#111; --danger:#b42318; }
+      * { box-sizing: border-box; }
+      body { margin:0; min-height:100vh; background:linear-gradient(180deg,#fafbfc 0%,var(--bg) 100%); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+      .page { width:min(1180px,calc(100vw - 28px)); margin:0 auto; padding:24px 0 40px; }
+      .panel { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow:0 14px 40px rgba(15,23,42,.06); }
+      .nav { display:flex; gap:8px; flex-wrap:wrap; width:max-content; max-width:100%; margin-bottom:18px; padding:6px; border:1px solid #e3e4e8; border-radius:16px; background:#f2f3f5; }
+      .nav a,.nav button { display:inline-flex; align-items:center; justify-content:center; min-height:38px; padding:8px 12px; border:0; border-radius:12px; background:transparent; color:#4b5565; text-decoration:none; font:inherit; font-size:14px; font-weight:800; cursor:pointer; white-space:nowrap; }
+      .nav .active { color:#fff; background:#111; }
+      .head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px; }
+      h1 { margin:0; font-size:28px; line-height:1.2; }
+      .muted { color:var(--muted); font-size:14px; line-height:1.55; }
+      .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+      button,.btn { min-height:42px; padding:10px 14px; border:1px solid var(--accent); border-radius:12px; background:var(--accent); color:#fff; font:inherit; font-weight:800; cursor:pointer; text-decoration:none; }
+      button.secondary,.btn.secondary { border-color:var(--line); background:#fff; color:var(--ink); }
+      button:disabled,.btn.disabled { opacity:.5; cursor:not-allowed; pointer-events:none; }
+      .layout { display:grid; grid-template-columns:minmax(260px,360px) 1fr; gap:14px; align-items:start; }
+      .box { border:1px solid var(--line); border-radius:16px; background:#fff; padding:14px; }
+      .box h2 { margin:0 0 12px; font-size:16px; }
+      label { display:block; margin-bottom:7px; color:#344054; font-size:13px; font-weight:800; }
+      select,input { width:100%; min-height:42px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); font:inherit; }
+      .row { display:grid; gap:7px; margin-top:12px; }
+      .status { margin-top:12px; color:var(--muted); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+      .status.error { color:var(--danger); }
+      .progress-top { display:flex; justify-content:space-between; gap:10px; color:#344054; font-weight:800; }
+      .track { height:10px; margin:12px 0; border-radius:999px; background:var(--soft); overflow:hidden; }
+      .fill { width:0%; height:100%; background:#111; transition:width .2s ease; }
+      .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+      code { display:block; min-height:42px; padding:11px; border-radius:12px; background:var(--soft); color:#101828; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:13px; line-height:1.45; overflow-wrap:anywhere; white-space:pre-wrap; }
+      .result-actions { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 12px; }
+      .preview { width:100%; min-height:440px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+      .qr-img { display:block; max-width:280px; width:100%; height:auto; border:1px solid var(--line); border-radius:12px; padding:10px; background:#fff; }
+      .logs { display:grid; gap:10px; max-height:420px; overflow:auto; overscroll-behavior:contain; }
+      .log { border:1px solid var(--line); border-radius:12px; padding:11px; background:#fff; }
+      .log.fail { border-color:#f3b0aa; background:#fff7f6; }
+      .log-top { display:flex; justify-content:space-between; gap:10px; color:var(--muted); font-size:12px; font-weight:800; }
+      .log-msg { margin-top:7px; font-size:13px; line-height:1.5; overflow-wrap:anywhere; white-space:pre-wrap; }
+      .switch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; }
+      .switch-row label { margin:0; }
+      .switch-row input[type="checkbox"] { width:22px; min-height:22px; accent-color:#111; }
+      .task-list { display:grid; gap:10px; max-height:430px; margin-top:12px; overflow:auto; padding-right:4px; overscroll-behavior:contain; }
+      .task-card { width:100%; border:1px solid var(--line); border-radius:12px; padding:11px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; }
+      .task-card.active { border-color:#111; box-shadow:0 0 0 2px rgba(17,17,17,.08); }
+      .task-card.fail { border-color:#f3b0aa; background:#fff7f6; }
+      .task-card.ok { border-color:#b7dfc4; background:#f6fff8; }
+      .task-card code { margin-top:8px; }
+      .modal-backdrop { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(15,23,42,.46); }
+      .modal { width:min(880px,100%); max-height:min(86vh,820px); overflow:hidden; border:1px solid var(--line); border-radius:20px; background:#fff; box-shadow:0 24px 80px rgba(15,23,42,.24); }
+      .modal-body { display:grid; gap:14px; padding:18px; }
+      .modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+      .task-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+      .meta-card { border:1px solid var(--line); border-radius:14px; padding:12px; background:#fbfcfd; }
+      .meta-card label { margin-bottom:6px; }
+      .meta-card code,.meta-card .muted { min-height:auto; margin:0; }
+      .hidden { display:none; }
+      @media (max-width:900px) { .layout { grid-template-columns:1fr; } h1 { font-size:24px; } .page { width:min(100vw - 20px,1180px); padding-top:14px; } }
+    </style>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell2" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell2"></script>
+  </head>
+  <body>
+    <main class="page">
+      <nav class="nav" aria-label="主菜单">
+        <a href="/">转长链</a><a href="/debug-generate" class="active">调试页面</a><a href="/qr">二维码队列</a><a href="/kr-qr">韩国队列</a><a href="/ch-qr">瑞士队列</a><a href="/nl-qr">荷兰队列</a><a href="/in-qr">印度队列</a><a href="/stats">运行统计</a><button id="logout" type="button">退出</button>
+      </nav>
+      <section class="panel">
+        <div class="head">
+          <div><h1>Provider 线路调试</h1><div class="muted">调试生成页，默认从 ZC 号池取号；保持现有 checkout 流程不变，仅按所选线路切换参数并生成对应 provider 支付页或二维码。</div></div>
+          <div class="actions"><button id="start" type="button">开始调试</button><button id="refreshLogs" class="secondary" type="button" disabled>刷新日志</button></div>
+        </div>
+        <div class="layout">
+          <aside class="box">
+            <h2>参数</h2>
+            <div class="row"><label for="linkType">线路</label><select id="linkType"><option value="upi" selected>印度 UPI（IN / INR）</option><option value="gopay">印尼 GoPay（ID / IDR）</option><option value="gcash">菲律宾 GCash（PH / PHP）</option><option value="grabpay">菲律宾 GrabPay（PH / PHP）</option><option value="korea">韩国 KakaoPay</option><option value="swiss">瑞士线路</option><option value="ideal">荷兰 iDEAL（NL / EUR）</option><option value="pix">巴西 PIX</option></select></div>
+            <div class="grid"><div class="row"><label for="country">国家</label><input id="country" value="IN" readonly /></div><div class="row"><label for="locale">语言</label><input id="locale" value="en" readonly /></div></div>
+            <div class="switch-row"><label for="concurrentEnabled">并发调试</label><input id="concurrentEnabled" type="checkbox" /></div>
+            <div class="grid"><div class="row"><label for="concurrencyCount">并发数</label><input id="concurrencyCount" type="number" min="1" max="8" value="3" disabled /></div><div class="row"><label for="totalCount">总数</label><input id="totalCount" type="number" min="1" max="50" value="3" disabled /></div></div>
+            <div class="status" id="status">等待开始。</div>
+          </aside>
+          <section class="box">
+            <h2>进度</h2>
+            <div class="progress-top"><span id="progressText">未开始</span><span id="progressPercent">0%</span></div><div class="track"><div id="progressFill" class="fill"></div></div><code id="jobId">-</code>
+            <div id="taskList" class="task-list hidden"></div>
+          </section>
+        </div>
+        <section id="resultBox" class="box hidden" style="margin-top:14px">
+          <h2>结果</h2>
+          <div class="result-actions"><a id="openLink" class="btn disabled" target="_blank" rel="noopener">打开结果链接</a><button id="copyLink" class="secondary" type="button" disabled>复制链接</button></div>
+          <div class="row"><label>最终链接</label><code id="finalLink"></code></div>
+          <div class="grid"><div class="row"><label>支付方式</label><code id="method"></code></div><div class="row"><label>地区 / 币种</label><code id="summary"></code></div></div>
+          <div class="grid"><div class="row"><label>提交状态</label><code id="submissionState"></code></div><div class="row"><label>Approval 结果</label><code id="approvalResult"></code></div></div>
+          <div id="previewWrap" class="row hidden"><label>预览</label><div id="preview"></div></div>
+        </section>
+      </section>
+    </main>
+    <section id="logModal" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="logModalTitle">
+        <div class="modal-body">
+          <div class="modal-head">
+            <div><h2 id="logModalTitle">任务日志</h2><div id="logModalHint" class="muted">点击任务卡片后查看实时日志。</div></div>
+            <button id="closeLogModal" class="secondary" type="button">关闭</button>
+          </div>
+          <div class="task-meta">
+            <div class="meta-card"><label>任务标题</label><code id="logTaskLabel">-</code></div>
+            <div class="meta-card"><label>任务状态</label><code id="logTaskStatus">-</code></div>
+            <div class="meta-card"><label>更新时间</label><code id="logTaskUpdatedAt">-</code></div>
+          </div>
+          <div id="logs" class="logs"><div class="muted">暂无日志。</div></div>
+        </div>
+      </div>
+    </section>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const PAGE_SCOPE = "admin";
+      const POLL_MS = 900;
+      const LOG_LIMIT = 200;
+      const TASK_PAGE_SIZE = 50;
+      const SELECTED_TASK_STORAGE_KEY = "opll_debug_selected_job";
+      const LINE_MAP = { upi:["IN","en"], gopay:["ID","id"], gcash:["PH","en-PH"], grabpay:["PH","en-PH"], korea:["KR","ko"], swiss:["CH","de"], ideal:["NL","nl"], pix:["BR","pt-BR"] };
+      let currentJobId = "";
+      let pollTimer = 0;
+      let logPollTimer = 0;
+      let finalUrl = "";
+      let tasksState = [];
+      let selectedTaskId = "";
+      function newJobId() { return String(crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 80); }
+      function redirectToLogin() { window.location.href = `/login?scope=${PAGE_SCOPE}&next=${encodeURIComponent(location.pathname)}`; }
+      function setStatus(text, error = false) { $("status").textContent = text; $("status").classList.toggle("error", error); }
+      function setProgress(percent, text, error = false) { const value = Math.max(0, Math.min(100, Number(percent || 0))); $("progressFill").style.width = `${value}%`; $("progressPercent").textContent = `${Math.round(value)}%`; $("progressText").textContent = text || "处理中"; $("progressText").style.color = error ? "#b42318" : "#344054"; }
+      async function readJson(response) { const text = await response.text(); try { return text ? JSON.parse(text) : {}; } catch (_) { return { detail: text || "响应不是有效 JSON" }; } }
+      function errorText(value, fallback) { if (typeof value === "string" && value.trim()) return value; if (Array.isArray(value) || (value && typeof value === "object")) return JSON.stringify(value, null, 2); return fallback; }
+      async function apiFetch(url, options = {}) { const response = await fetch(url, { cache:"no-store", ...options }); if (response.status === 401) { redirectToLogin(); throw new Error("登录已失效"); } return response; }
+      function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = 0; }
+      function stopLogPolling() { if (logPollTimer) clearInterval(logPollTimer); logPollTimer = 0; }
+      function publicProviderType(nativeType) { return nativeType === "korea" ? "kakao_pay" : nativeType; }
+      function applyProviderFromUrl() { const requested = String(new URLSearchParams(location.search).get("provider") || "").trim().toLowerCase(); const nativeType = requested === "kakao_pay" ? "korea" : requested; const option = Array.from($("linkType").options).find((item) => item.value === nativeType); if (option) $("linkType").value = nativeType; }
+      function syncProviderToUrl() { const publicType = publicProviderType($("linkType").value); const url = new URL(location.href); url.searchParams.set("provider", publicType); history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`); window.dispatchEvent(new CustomEvent("paylink:provider-change", { detail: { publicType } })); }
+      function applyLine() { const [country, locale] = LINE_MAP[$("linkType").value] || LINE_MAP.upi; $("country").value = country; $("locale").value = locale; }
+      function walletLineNeedsProviderLink(linkType) { return ["gopay", "gcash", "grabpay"].includes(String(linkType || "").trim()); }
+      function primaryLink(result) {
+        const providerRedirect = String(result.provider_redirect_url || "").trim();
+        if (providerRedirect) return providerRedirect;
+        const hostedUrl = String(result.upi_hosted_url || result.pix_hosted_instructions_url || "").trim();
+        if (hostedUrl) return hostedUrl;
+        const longUrl = String(result.long_url || "").trim();
+        if (longUrl) return longUrl;
+        if (walletLineNeedsProviderLink(result.link_type)) return "";
+        const stripeRedirect = String(result.stripe_redirect_url || "").trim();
+        if (stripeRedirect) return stripeRedirect;
+        return String(result.checkout_url || "").trim();
+      }
+      function resultIsDisplaySuccess(result) {
+        if (!result || typeof result !== "object") return false;
+        const approvalResult = String(result.approval_result || "").trim().toLowerCase();
+        if (walletLineNeedsProviderLink(result.link_type)) {
+          return approvalResult === "approved" && Boolean(primaryLink(result));
+        }
+        return Boolean(primaryLink(result));
+      }
+      function showPreview(result) {
+        const link = primaryLink(result);
+        $("preview").innerHTML = link ? `<iframe class="preview" src="${link}" loading="lazy" referrerpolicy="no-referrer"></iframe>` : "";
+        $("previewWrap").classList.toggle("hidden", !link);
+      }
+      function showResult(result) { finalUrl = primaryLink(result); $("finalLink").textContent = finalUrl || "-"; $("method").textContent = result.payment_method_type || "-"; $("summary").textContent = `${result.billing_country || "-"} / ${result.currency || "-"} / ${result.link_type || "-"}`; $("submissionState").textContent = result.submission_state || "-"; $("approvalResult").textContent = result.approval_result || "-"; $("openLink").href = finalUrl || "#"; $("openLink").classList.toggle("disabled", !finalUrl); $("copyLink").disabled = !finalUrl; showPreview(result); $("resultBox").classList.remove("hidden"); }
+      function escapeHtml(value) { return String(value || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;"); }
+      function readTime(value) { if (typeof value === "number" && Number.isFinite(value)) return value > 1e12 ? value : value * 1000; if (typeof value === "string" && value.trim()) { const numeric = Number(value); if (Number.isFinite(numeric) && numeric > 0) return numeric > 1e12 ? numeric : numeric * 1000; const parsed = Date.parse(value); if (Number.isFinite(parsed)) return parsed; } return 0; }
+      function formatTime(value) { const stamp = readTime(value); return stamp ? new Date(stamp).toLocaleString() : "-"; }
+      function taskStateText(task) { if (!task) return "未选择任务"; if (task.error) return task.error || task.text || "任务失败"; if (task.done || task.result) return task.text || "任务完成"; if (task.percent > 0) return `${task.text || "处理中"} (${Math.round(task.percent)}%)`; return task.text || "等待中"; }
+      function isTaskFinished(task) { return Boolean(task && (task.done || task.result || task.error)); }
+      function isFailedLog(item) { const status = String(item.status || "").toLowerCase(); const kind = String(item.kind || "").toLowerCase(); const message = String(item.message || "").toLowerCase(); return status === "failed" || status === "error" || kind.includes("fail") || kind.includes("error") || message.includes(" failed") || message.includes("error"); }
+      function renderLogs(items) { const rows = Array.isArray(items) ? items : []; if (!rows.length) { $("logs").innerHTML = '<div class="muted">暂无实时日志。</div>'; return; } $("logs").innerHTML = rows.map((item) => `<div class="log ${isFailedLog(item) ? "fail" : ""}"><div class="log-top"><span>${escapeHtml(item.kind || "-")}</span><span>${formatTime(item.ts)}</span></div><div class="log-msg">${escapeHtml(item.message || "-")}</div></div>`).join(""); }
+      function saveSelectedTaskId(jobId) { if (jobId) localStorage.setItem(SELECTED_TASK_STORAGE_KEY, jobId); else localStorage.removeItem(SELECTED_TASK_STORAGE_KEY); }
+      function loadSelectedTaskId() { return localStorage.getItem(SELECTED_TASK_STORAGE_KEY) || ""; }
+      function selectedTask() { return tasksState.find((item) => item.jobId === selectedTaskId) || null; }
+      function findTask(jobId) { return tasksState.find((item) => item.jobId === jobId) || null; }
+      function updateSelectedTaskView(task) {
+        currentJobId = task ? task.jobId : "";
+        selectedTaskId = task ? task.jobId : "";
+        saveSelectedTaskId(selectedTaskId);
+        $("jobId").textContent = currentJobId || "-";
+        if (task && task.result) showResult(task.result);
+      }
+      function normalizeSnapshotTask(item, index) {
+        const result = item && typeof item.result === "object" ? item.result : null;
+        const text = String(item.text || "");
+        const errorFlag = Boolean(item && item.error);
+        const errorValue = errorFlag ? errorText(item.error, text || "任务失败") : "";
+        return {
+          jobId: String(item.job_id || ""),
+          label: `任务 ${index + 1}`,
+          text,
+          error: errorValue,
+          result,
+          done: Boolean(item.done),
+          percent: Number(item.percent || (result || item.done ? 100 : 0)),
+          updatedAt: readTime(item.updated_at || item.updatedAt || item.update_time || item.ts || item.created_at),
+        };
+      }
+      function mergeTaskProgress(jobId, data) {
+        const task = findTask(jobId);
+        if (!task || !data || !data.ok) return task;
+        task.done = Boolean(data.done);
+        task.text = String(data.text || task.text || "");
+        task.error = data.error ? task.text || "任务失败" : "";
+        task.result = data && typeof data.result === "object" ? data.result : task.result;
+        task.percent = Number(data.percent || (task.done || task.result ? 100 : task.percent || 0));
+        task.updatedAt = Date.now();
+        return task;
+      }
+      function renderLogMeta(task, logs = []) {
+        const latestLogTime = logs.length ? readTime(logs[logs.length - 1].ts) : 0;
+        const updatedAt = latestLogTime || (task ? task.updatedAt : 0);
+        $("logModalTitle").textContent = task ? `${task.label} 日志` : "任务日志";
+        $("logModalHint").textContent = task ? task.jobId : "点击任务卡片后查看实时日志。";
+        $("logTaskLabel").textContent = task ? task.label : "-";
+        $("logTaskStatus").textContent = taskStateText(task);
+        $("logTaskUpdatedAt").textContent = formatTime(updatedAt);
+      }
+      function openLogModalShell(task) {
+        updateSelectedTaskView(task);
+        renderTaskList(tasksState);
+        renderLogMeta(task);
+        $("logModal").classList.remove("hidden");
+        $("logModal").setAttribute("aria-hidden", "false");
+      }
+      function closeLogModal() {
+        stopLogPolling();
+        $("logModal").classList.add("hidden");
+        $("logModal").setAttribute("aria-hidden", "true");
+      }
+      async function loadTaskSnapshots() {
+        const response = await apiFetch(`/api/tasks?page=1&page_size=${TASK_PAGE_SIZE}`);
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(errorText(data.detail, `任务列表加载失败 (${response.status})`));
+        const items = Array.isArray(data.items) ? data.items : [];
+        tasksState = items.map((item, index) => normalizeSnapshotTask(item, index)).filter((item) => item.jobId);
+        renderTaskList(tasksState);
+        if (!tasksState.length) {
+          updateSelectedTaskView(null);
+          return;
+        }
+        const preferredJobId = loadSelectedTaskId() || currentJobId;
+        const targetTask = tasksState.find((item) => item.jobId === preferredJobId) || tasksState[0];
+        updateSelectedTaskView(targetTask);
+        if (targetTask.result) showResult(targetTask.result);
+        if (!$("logModal").classList.contains("hidden")) renderLogMeta(targetTask);
+      }
+      async function syncTaskProgress(jobId, options = {}) {
+        const response = await apiFetch(`/api/checkout-progress?job_id=${encodeURIComponent(jobId)}`);
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(errorText(data.detail, `进度加载失败 (${response.status})`));
+        if (!data.ok) return null;
+        const task = mergeTaskProgress(jobId, data) || findTask(jobId);
+        renderTaskList(tasksState);
+        if (options.updateMain !== false && jobId === currentJobId) renderProgress(data, { stopPolling:false });
+        if (!$("logModal").classList.contains("hidden") && jobId === selectedTaskId) renderLogMeta(task);
+        return data;
+      }
+      async function loadLogs(jobId = currentJobId) { if (!jobId) return []; const response = await apiFetch(`/api/tasks/logs?job_id=${encodeURIComponent(jobId)}&limit=${LOG_LIMIT}`); const data = await readJson(response); if (!response.ok) throw new Error(errorText(data.detail, `日志加载失败 (${response.status})`)); const rows = Array.isArray(data.items) ? data.items : []; renderLogs(rows); renderLogMeta(findTask(jobId), rows); return rows; }
+      async function openTaskLogs(jobId) {
+        const task = findTask(jobId);
+        if (!task) return;
+        stopLogPolling();
+        openLogModalShell(task);
+        await syncTaskProgress(jobId, { updateMain:true }).catch(() => {});
+        await loadLogs(jobId);
+        if (isTaskFinished(findTask(jobId))) return;
+        logPollTimer = setInterval(() => {
+          Promise.allSettled([syncTaskProgress(jobId, { updateMain:true }), loadLogs(jobId)]).then(() => {
+            if ($("logModal").classList.contains("hidden") || jobId !== selectedTaskId || isTaskFinished(findTask(jobId))) stopLogPolling();
+          }).catch((error) => setStatus(error.message || String(error), true));
+        }, POLL_MS);
+      }
+      async function fetchProgress() {
+        const response = await apiFetch(`/api/checkout-progress?job_id=${encodeURIComponent(currentJobId)}`);
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(errorText(data.detail, `进度加载失败 (${response.status})`));
+        if (!data.ok) return null;
+        return data;
+      }
+      function finishFailedTask(text, options = {}) {
+        if (options.stopPolling !== false) stopPolling();
+        $("start").disabled = false;
+        setProgress(100, text || "任务失败", true);
+        setStatus(text || "任务失败", true);
+      }
+      function renderProgress(data, options = {}) {
+        setProgress(data.percent, data.text, data.error);
+        if (!data.done) return false;
+        if (data.error) {
+          finishFailedTask(data.text, options);
+          return true;
+        }
+        if (!resultIsDisplaySuccess(data.result || {})) {
+          finishFailedTask(data.text || "任务失败", options);
+          showResult(data.result || {});
+          return true;
+        }
+        if (options.stopPolling !== false) stopPolling();
+        $("start").disabled = false;
+        showResult(data.result || {});
+        setStatus(data.result && ["gopay", "gcash", "grabpay"].includes(data.result.link_type) ? "调试任务完成，已返回支付跳转结果。" : "调试任务完成。");
+        return true;
+      }
+      async function refreshProgress() {
+        const data = await fetchProgress();
+        if (!data) return false;
+        if (!$("logModal").classList.contains("hidden")) await loadLogs();
+        return renderProgress(data);
+      }
+      function startPolling() {
+        stopPolling();
+        pollTimer = setInterval(() => {
+          refreshProgress().catch((error) => {
+            setStatus(error.message || String(error), true);
+          });
+        }, POLL_MS);
+      }
+      async function showLatestProgressError(fallbackText) {
+        try {
+          const data = await fetchProgress();
+          if (data && data.error) {
+            finishFailedTask(data.text || fallbackText);
+            if (!$("logModal").classList.contains("hidden")) await loadLogs();
+            return;
+          }
+        } catch (_) {}
+        finishFailedTask(fallbackText);
+        if (!$("logModal").classList.contains("hidden")) await loadLogs().catch(() => {});
+      }
+      function concurrencyCount() {
+        if (!$("concurrentEnabled").checked) return 1;
+        return Math.max(1, Math.min(8, Number($("concurrencyCount").value || 1)));
+      }
+      function totalCount() {
+        if (!$("concurrentEnabled").checked) return 1;
+        return Math.max(1, Math.min(50, Number($("totalCount").value || 1)));
+      }
+      function basePayload(jobId, account) {
+        return {
+          job_id: jobId,
+          link_type: $("linkType").value,
+          billing_country: $("country").value,
+          payment_locale: $("locale").value,
+          accessToken: String((account || {}).access_token || ""),
+          autoClaimZc: false,
+        };
+      }
+      async function claimAccount(jobId) {
+        const response = await apiFetch("/api/zc/claim", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ claimKey: jobId, status: "registered", leaseSeconds: 21600 })
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(errorText(data.detail, `取号失败 (${response.status})`));
+        return data.account || {};
+      }
+      async function runDebugTask(jobId) {
+        const account = await claimAccount(jobId);
+        if (!String(account.access_token || "").trim()) throw new Error("ZC 号池返回的账号缺少 access_token");
+        const response = await apiFetch("/api/debug/long-link", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(basePayload(jobId, account))
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(errorText(data.detail, `调试生成失败 (${response.status})`));
+        return data;
+      }
+      function renderTaskList(items) {
+        const root = $("taskList");
+        root.innerHTML = items.map((item) => `<button type="button" class="task-card ${item.jobId === selectedTaskId ? "active" : ""} ${item.error ? "fail" : resultIsDisplaySuccess(item.result) ? "ok" : item.done ? "fail" : ""}" data-job-id="${escapeHtml(item.jobId)}"><div><strong>${escapeHtml(item.label)}</strong></div><code>${escapeHtml(item.jobId)}</code><div class="status ${item.error ? "error" : item.done && !resultIsDisplaySuccess(item.result) ? "error" : ""}">${escapeHtml(item.error || item.text || "等待中")}</div>${item.result ? `<code>${escapeHtml(primaryLink(item.result) || "-")}</code>` : ""}</button>`).join("");
+        root.querySelectorAll("[data-job-id]").forEach((node) => node.addEventListener("click", () => openTaskLogs(node.getAttribute("data-job-id") || "").catch((error) => setStatus(error.message || String(error), true))));
+        root.classList.toggle("hidden", !items.length);
+      }
+      async function startDebug() {
+        const total = totalCount();
+        const parallel = concurrencyCount();
+        const tasks = Array.from({ length: total }, (_, index) => ({ jobId: newJobId(), label: `任务 ${index + 1}/${total}`, text: "等待中", error: "", done: false, percent: 0, result: null, updatedAt: Date.now() }));
+        tasksState = tasks;
+        updateSelectedTaskView(tasks[0]);
+        $("resultBox").classList.add("hidden");
+        $("start").disabled = true;
+        $("refreshLogs").disabled = false;
+        setStatus(total > 1 ? `准备启动 ${total} 个任务，并发 ${parallel} 个...` : "正在启动任务...");
+        setProgress(4, "领取 Token");
+        renderTaskList(tasksState);
+        const results = new Array(tasksState.length);
+        let cursor = 0;
+        async function worker() {
+          while (true) {
+            const index = cursor;
+            cursor += 1;
+            if (index >= tasksState.length) return;
+            const task = tasksState[index];
+            task.text = "正在领取账号";
+            task.updatedAt = Date.now();
+            renderTaskList(tasksState);
+            try {
+              task.result = await runDebugTask(task.jobId);
+              task.done = true;
+              task.percent = 100;
+              task.text = "任务完成";
+              task.updatedAt = Date.now();
+              if (task.jobId === selectedTaskId) showResult(task.result);
+            } catch (error) {
+              task.error = error instanceof Error ? error.message : String(error);
+              task.done = true;
+              task.percent = 100;
+              task.updatedAt = Date.now();
+            }
+            results[index] = task;
+            renderTaskList(tasksState);
+          }
+        }
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(parallel, total)) }, () => worker()));
+        const success = results.filter((item) => resultIsDisplaySuccess(item.result)).length;
+        const failed = results.length - success;
+        const firstResult = results.find((item) => resultIsDisplaySuccess(item.result))?.result || {};
+        if (resultIsDisplaySuccess(firstResult)) showResult(firstResult);
+        setProgress(100, failed ? `成功 ${success}/${results.length}，失败 ${failed}` : "完成", Boolean(failed));
+        setStatus(failed ? `并发任务完成：成功 ${success}，失败 ${failed}` : `并发任务完成：成功 ${success}`, Boolean(failed));
+        if (!$("logModal").classList.contains("hidden")) await loadLogs(selectedTaskId || currentJobId).catch(() => {});
+        $("start").disabled = false;
+      }
+      $("start").addEventListener("click", () => {
+        startDebug().catch((error) => {
+          showLatestProgressError(error.message || String(error));
+        });
+      });
+      $("refreshLogs").addEventListener("click", () => openTaskLogs(selectedTaskId || currentJobId).catch((error) => setStatus(error.message || String(error), true)));
+      $("closeLogModal").addEventListener("click", closeLogModal);
+      $("logModal").addEventListener("click", (event) => { if (event.target === $("logModal")) closeLogModal(); });
+      window.addEventListener("keydown", (event) => { if (event.key === "Escape" && !$("logModal").classList.contains("hidden")) closeLogModal(); });
+      $("linkType").addEventListener("change", () => { applyLine(); syncProviderToUrl(); });
+      $("concurrentEnabled").addEventListener("change", () => { const enabled = $("concurrentEnabled").checked; $("concurrencyCount").disabled = !enabled; $("totalCount").disabled = !enabled; });
+      $("copyLink").addEventListener("click", () => navigator.clipboard.writeText(finalUrl));
+      $("logout").addEventListener("click", async () => { try { await apiFetch("/api/auth/logout", { method:"POST" }); } catch (_) {} redirectToLogin(); });
+      applyProviderFromUrl();
+      applyLine();
+      loadTaskSnapshots().catch(() => {});
+    </script>
+  </body>
+</html>

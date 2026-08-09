@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>控制台登录</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef2f6;
+        --panel: rgba(255, 255, 255, 0.94);
+        --ink: #0f1728;
+        --muted: #667085;
+        --line: #d7dde7;
+        --soft: #eef3f8;
+        --accent: #111111;
+        --accent-2: #0f766e;
+        --danger: #b42318;
+        --radius-lg: 22px;
+        --radius-md: 14px;
+        --shadow: 0 28px 80px rgba(15, 23, 42, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(21, 94, 239, 0.10), transparent 32%),
+          radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 28%),
+          linear-gradient(180deg, #f9fbfd 0%, var(--bg) 100%);
+      }
+
+      .shell {
+        width: min(440px, 100%);
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 26px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #f4f6fb;
+        color: #44516b;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 16px 0 8px;
+        font-size: 30px;
+        line-height: 1.08;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .scope-bar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 18px;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #f5f7fb;
+      }
+
+      .scope-bar button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: #556074;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .scope-bar button.active {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      label {
+        display: block;
+        margin: 18px 0 8px;
+        font-weight: 700;
+      }
+
+      input {
+        width: 100%;
+        min-height: 50px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+
+      button.primary,
+      a.secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 12px 16px;
+        border-radius: 14px;
+        text-decoration: none;
+        font: inherit;
+        font-weight: 800;
+      }
+
+      button.primary {
+        border: 0;
+        background: linear-gradient(135deg, #111111 0%, #243349 100%);
+        color: #fff;
+        cursor: pointer;
+      }
+
+      a.secondary {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .status {
+        margin-top: 16px;
+        min-height: 22px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .notice {
+        margin-top: 18px;
+        padding: 14px;
+        border: 1px solid #d7e5df;
+        border-radius: 16px;
+        background: #f4fffb;
+        color: #245b4c;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .notice.disabled {
+        border-color: #e8d9a8;
+        background: #fff8e8;
+        color: #7b5811;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card">
+        <div class="eyebrow">OPLL V2 Access</div>
+        <h1>控制台登录</h1>
+        <p id="intro">管理员可进入控制台和二维码页，扫码密码只允许进入二维码页。</p>
+
+        <div class="scope-bar" role="tablist" aria-label="登录范围">
+          <button id="scopeAdmin" class="active" type="button">管理员</button>
+          <button id="scopeQr" type="button">二维码页</button>
+        </div>
+
+        <label for="password">访问密码</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="输入对应页面密码" />
+
+        <div class="actions">
+          <button id="submit" class="primary" type="button">进入</button>
+          <a id="directLink" class="secondary" href="/">直接打开目标页</a>
+        </div>
+
+        <div id="status" class="status"></div>
+        <div id="notice" class="notice" style="display:none"></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const params = new URLSearchParams(window.location.search);
+      let selectedScope = params.get("scope") === "qr" ? "qr" : "admin";
+
+      function targetPath() {
+        const next = params.get("next") || "";
+        if (next.startsWith("/")) return next;
+        return selectedScope === "qr" ? "/qr" : "/";
+      }
+
+      function setStatus(text, isError = false) {
+        $("status").textContent = text;
+        $("status").classList.toggle("error", isError);
+      }
+
+      function setScope(scope) {
+        selectedScope = scope === "qr" ? "qr" : "admin";
+        $("scopeAdmin").classList.toggle("active", selectedScope === "admin");
+        $("scopeQr").classList.toggle("active", selectedScope === "qr");
+        $("directLink").href = targetPath();
+      }
+
+      async function parseJson(response) {
+        const text = await response.text();
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch (_) {
+          return { detail: text || "响应不是有效 JSON" };
+        }
+      }
+
+      async function refreshIdentity() {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = await parseJson(response);
+        const notice = $("notice");
+        if (!response.ok) {
+          setStatus(data.detail || `请求失败 (${response.status})`, true);
+          return;
+        }
+        notice.style.display = "block";
+        if (!data.auth_enabled) {
+          notice.className = "notice disabled";
+          notice.textContent = "当前未配置页面密码，控制台与二维码页处于直接访问状态。";
+          return;
+        }
+        notice.className = "notice";
+        notice.textContent = `Cookie 时效 ${Math.round((Number(data.ttl_seconds || 0) / 3600) || 0)} 小时。`;
+        if (data.authorized) {
+          const currentScope = String(data.scope || "");
+          if (currentScope === "admin" || currentScope === selectedScope) {
+            window.location.href = targetPath();
+          }
+        }
+      }
+
+      async function submit() {
+        setStatus("正在验证...");
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: selectedScope,
+            password: $("password").value,
+            next: targetPath(),
+          }),
+        });
+        const data = await parseJson(response);
+        if (!response.ok) {
+          setStatus(data.detail || `登录失败 (${response.status})`, true);
+          return;
+        }
+        window.location.href = data.next || targetPath();
+      }
+
+      $("scopeAdmin").addEventListener("click", () => setScope("admin"));
+      $("scopeQr").addEventListener("click", () => setScope("qr"));
+      $("submit").addEventListener("click", submit);
+      $("password").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") submit();
+      });
+
+      setScope(selectedScope);
+      refreshIdentity();
+    </script>
+  </body>
+</html>
