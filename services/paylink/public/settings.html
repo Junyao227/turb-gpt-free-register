@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Paylink 代理配置</title>
-    <link rel="stylesheet" href="/assets/settings.css?v=20260809-proxy1" />
+    <link rel="stylesheet" href="/assets/settings.css?v=20260809-profile1" />
     <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell5" />
     <script defer src="/assets/app-shell.js?v=20260809-shell5"></script>
-    <script defer src="/assets/settings.js?v=20260809-proxy1"></script>
+    <script defer src="/assets/settings.js?v=20260809-profile1"></script>
   </head>
   <body class="settings-page">
     <main class="settings-page__main">
@@ -17,6 +17,19 @@
       </header>
 
       <form id="proxyConfigForm" class="proxy-config" novalidate>
+        <section id="paypalProfileSection" class="proxy-config__section" hidden aria-labelledby="paypalProfileHeading">
+          <div class="proxy-config__section-header">
+            <div>
+              <h2 id="paypalProfileHeading">PayPal 地区</h2>
+              <p id="paypalProfileState" class="proxy-config__meta">-</p>
+            </div>
+          </div>
+          <div class="proxy-config__inline-field">
+            <label class="proxy-config__label" for="paypalCountry">账单国家</label>
+            <select id="paypalCountry" name="paypalCountry"></select>
+            <button id="saveProfileButton" class="proxy-config__secondary" type="button">应用地区</button>
+          </div>
+        </section>
         <section class="proxy-config__section" aria-labelledby="fallbackHeading">
           <div class="proxy-config__section-header">
             <div>

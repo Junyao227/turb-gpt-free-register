@@ -7,10 +7,36 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app
+from paylink import provider_config
 
 
 FIXTURE_PROXY = "http://fixture-user:fixture-pass@proxy.example.test:443"
 FIXTURE_PROXY_TWO = "http://fixture-user-two:fixture-pass-two@proxy-two.example.test:8443"
+
+
+def configure_paypal_profile(monkeypatch, tmp_path, country="US", locale="en"):
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "# retained top-level comment",
+                "[providers.paypal]",
+                "enabled = true",
+                f"country = {country}",
+                f"locale = {locale}",
+                "custom_option = retain-me",
+                "",
+                "[providers.other]",
+                "enabled = true",
+                "country = US",
+                "locale = en",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(provider_config, "DEFAULT_CONFIG_PATH", config_path)
+    return config_path
 
 
 def test_proxy_config_view_masks_provider_credentials(monkeypatch):
@@ -32,7 +58,8 @@ def test_proxy_config_view_masks_provider_credentials(monkeypatch):
     assert "proxy.example.test" not in serialized
 
 
-def test_proxy_config_view_maps_paypal_to_its_dedicated_settings(monkeypatch):
+def test_proxy_config_view_maps_us_paypal_to_legacy_dedicated_settings(monkeypatch, tmp_path):
+    configure_paypal_profile(monkeypatch, tmp_path)
     monkeypatch.setenv("OPENAI_PAY_PAYPAL_PROXY", FIXTURE_PROXY)
     monkeypatch.setenv("OPENAI_PAY_PAYPAL_PROXY_POOL", FIXTURE_PROXY_TWO)
 
@@ -42,7 +69,40 @@ def test_proxy_config_view_maps_paypal_to_its_dedicated_settings(monkeypatch):
     assert view["fallback"]["env_key"] == "OPENAI_PAY_PAYPAL_PROXY"
     assert view["pool"]["env_key"] == "OPENAI_PAY_PAYPAL_PROXY_POOL"
     assert view["pool"]["count"] == 1
+    assert view["profile"] == {
+        "country": "US",
+        "locale": "en",
+        "currency": "USD",
+        "fallback_key": "OPENAI_PAY_PAYPAL_PROXY",
+        "pool_key": "OPENAI_PAY_PAYPAL_PROXY_POOL",
+    }
     assert "fixture-user" not in serialized
+    assert "proxy.example.test" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("country", "locale", "currency"),
+    (("TH", "th", "THB"), ("BR", "pt-BR", "BRL")),
+)
+def test_proxy_config_view_uses_active_regional_paypal_settings(monkeypatch, tmp_path, country, locale, currency):
+    configure_paypal_profile(monkeypatch, tmp_path, country, locale)
+    fallback_key = f"OPENAI_PAY_PAYPAL_{country}_PROXY"
+    pool_key = f"OPENAI_PAY_PAYPAL_{country}_PROXY_POOL"
+    monkeypatch.setenv("OPENAI_PAY_PAYPAL_PROXY", "http://legacy-user:legacy-pass@legacy.example.test:443")
+    monkeypatch.setenv(fallback_key, FIXTURE_PROXY)
+    monkeypatch.setenv(pool_key, FIXTURE_PROXY_TWO)
+
+    view = app.proxy_config_view("paypal")
+    serialized = json.dumps(view)
+
+    assert view["fallback"]["env_key"] == fallback_key
+    assert view["pool"]["env_key"] == pool_key
+    assert view["pool"]["count"] == 1
+    assert view["profile"]["country"] == country
+    assert view["profile"]["locale"] == locale
+    assert view["profile"]["currency"] == currency
+    assert "fixture-user" not in serialized
+    assert "legacy-user" not in serialized
     assert "proxy.example.test" not in serialized
 
 
@@ -124,6 +184,72 @@ def test_proxy_configuration_update_writes_atomically_and_updates_runtime(monkey
     assert f'OPENAI_PAY_PH_PROXY_POOL="{FIXTURE_PROXY_TWO};{FIXTURE_PROXY}"' in content
     assert app.PH_STAGE_PROXY == FIXTURE_PROXY
     assert app.PH_PROXY_POOL == [FIXTURE_PROXY_TWO, FIXTURE_PROXY]
+    assert "fixture-user" not in json.dumps(result)
+
+
+def test_paypal_profile_update_preserves_unrelated_ini_content_and_switches_proxy_view(monkeypatch, tmp_path):
+    config_path = configure_paypal_profile(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENAI_PAY_PAYPAL_TH_PROXY", FIXTURE_PROXY)
+    monkeypatch.setenv("OPENAI_PAY_PAYPAL_TH_PROXY_POOL", FIXTURE_PROXY_TWO)
+
+    result = app.update_provider_profile_config(
+        app.ProviderProfileUpdateRequest(provider="paypal", country="TH")
+    )
+    content = config_path.read_text(encoding="utf-8")
+
+    assert result["config"]["country"] == "TH"
+    assert result["config"]["locale"] == "th"
+    assert "# retained top-level comment" in content
+    assert "custom_option = retain-me" in content
+    assert "[providers.other]" in content
+    assert "country = TH" in content
+    assert "locale = th" in content
+    assert app.proxy_config_view("paypal")["fallback"]["env_key"] == "OPENAI_PAY_PAYPAL_TH_PROXY"
+    assert not list(tmp_path.glob(".providers-*.tmp"))
+
+
+def test_paypal_profile_validation_does_not_change_ini(monkeypatch, tmp_path):
+    config_path = configure_paypal_profile(monkeypatch, tmp_path)
+    original = config_path.read_text(encoding="utf-8")
+    monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(app.HTTPException, match="unsupported PayPal locale") as exc:
+        app.update_provider_profile_config(
+            app.ProviderProfileUpdateRequest(provider="paypal", country="BR", locale="th")
+        )
+
+    assert exc.value.status_code == 400
+    assert config_path.read_text(encoding="utf-8") == original
+
+    with pytest.raises(app.HTTPException, match="country profile is required"):
+        app.update_provider_profile_config(app.ProviderProfileUpdateRequest(provider="paypal"))
+
+    assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_regional_paypal_proxy_update_writes_dynamic_env_keys_and_reads_them_at_runtime(monkeypatch, tmp_path):
+    configure_paypal_profile(monkeypatch, tmp_path, "BR", "pt-BR")
+    env_path = tmp_path / ".env"
+    env_path.write_text("UNRELATED_VALUE=keep\n", encoding="utf-8")
+    monkeypatch.setattr(app, "PAYLINK_ENV_PATH", env_path)
+    monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENAI_PAY_PAYPAL_BR_PROXY", "")
+    monkeypatch.setenv("OPENAI_PAY_PAYPAL_BR_PROXY_POOL", "")
+
+    result = app.update_provider_proxy_config(
+        app.ProviderProxyUpdateRequest(
+            provider="paypal",
+            fallbackProxy=FIXTURE_PROXY,
+            proxyPool=FIXTURE_PROXY_TWO,
+        )
+    )
+
+    assert 'OPENAI_PAY_PAYPAL_BR_PROXY="http://fixture-user:fixture-pass@proxy.example.test:443"' in env_path.read_text(encoding="utf-8")
+    assert app.proxy_candidates_for_request(
+        app.LongLinkRequest(link_type="paypal", billing_country="BR", payment_locale="pt-BR")
+    ) == [FIXTURE_PROXY_TWO, FIXTURE_PROXY]
+    assert result["config"]["fallback"]["env_key"] == "OPENAI_PAY_PAYPAL_BR_PROXY"
     assert "fixture-user" not in json.dumps(result)
 
 
@@ -231,7 +357,8 @@ def test_dedicated_ideal_proxy_pool_has_precedence_over_generic_fallback(monkeyp
     assert generic_proxy in candidates[1:]
 
 
-def test_dedicated_paypal_proxy_pool_has_precedence_over_generic_checkout_candidates(monkeypatch):
+def test_dedicated_us_paypal_proxy_pool_has_precedence_over_generic_checkout_candidates(monkeypatch, tmp_path):
+    configure_paypal_profile(monkeypatch, tmp_path)
     paypal_proxy = "http://fixture-paypal:fixture-pass@paypal-proxy.example.test:443"
     generic_proxy = "http://fixture-generic:fixture-pass@generic-proxy.example.test:443"
     monkeypatch.setattr(app, "PAYPAL_PROXY_POOL", [paypal_proxy])

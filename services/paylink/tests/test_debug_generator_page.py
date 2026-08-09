@@ -150,12 +150,18 @@ def test_proxy_configuration_page_and_routes_exist():
     assert "/settings" in route_paths
     assert "/api/config/proxy" in route_paths
     assert "/api/config/proxy/test" in route_paths
+    assert "/api/config/provider" in route_paths
     assert "/assets/app-shell.css?v=20260809-shell5" in settings
     assert "/assets/app-shell.js?v=20260809-shell5" in settings
     assert "/assets/settings.js" in settings
+    assert 'id="paypalProfileSection"' in settings
+    assert 'id="paypalCountry"' in settings
+    assert 'id="saveProfileButton"' in settings
     assert 'fetch(`/api/config/proxy?provider=${encodeURIComponent(provider)}`' in settings_js
+    assert 'fetch(`/api/config/provider?provider=${encodeURIComponent(provider)}`' in settings_js
     assert 'fetch("/api/config/proxy",' in settings_js
     assert 'fetch("/api/config/proxy/test",' in settings_js
+    assert 'fetch("/api/config/provider",' in settings_js
 
 
 def test_home_and_debug_pages_accept_public_provider_query_values():

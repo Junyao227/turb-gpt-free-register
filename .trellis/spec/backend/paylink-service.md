@@ -55,6 +55,13 @@ POST /api/config/proxy/test
   request:  { "provider": string }
   response: { "ok": boolean, "provider": string, "duration_ms": integer, "message": string }
 
+GET /api/config/provider?provider=paypal
+  response: { "ok": true, "config": { provider, country, locale, currency, choices } }
+
+PUT /api/config/provider
+  request:  { "provider": "paypal", "country": "US" | "TH" | "BR", "locale"?: string }
+  response: { "ok": true, "config": <credential-free profile projection> }
+
 payment_page_terminal_failure(payload: object) -> string
   response: empty for non-terminal states; otherwise a redacted state/error summary
 ```
@@ -112,13 +119,22 @@ submits no query parameters to the event endpoint.
   provider-stage fallback. GrabPay uses its dedicated PH pool and fallback
   before any generic PH-rewritten candidate at both stages. It must not reuse
   either GoPay proxy setting; GCash keeps its existing PH settings.
-- PayPal is a standard US Checkout-link Provider. It reads
-  `OPENAI_PAY_PAYPAL_PROXY` and `OPENAI_PAY_PAYPAL_PROXY_POOL` before generic
-  US Checkout candidates, verifies that the Checkout lists `paypal`, and
-  returns only the Checkout URL. It does not create a Stripe payment method,
-  submit a payment, or allocate a provider-pending queue record.
-  Pool values are comma- or semicolon-separated URLs and must remain only in
-  `.env`; tests use fixture proxy URLs.
+- PayPal is a Checkout-link Provider with one explicit active profile in
+  `[providers.paypal]`. US (`US` / `en` / `USD`) remains the default and uses
+  the compatibility aliases `OPENAI_PAY_PAYPAL_PROXY` and
+  `OPENAI_PAY_PAYPAL_PROXY_POOL`. Thailand (`TH` / `th` / `THB`) uses
+  `OPENAI_PAY_PAYPAL_TH_PROXY` and `OPENAI_PAY_PAYPAL_TH_PROXY_POOL`; Brazil
+  (`BR` / `pt-BR` / `BRL`) uses `OPENAI_PAY_PAYPAL_BR_PROXY` and
+  `OPENAI_PAY_PAYPAL_BR_PROXY_POOL`. The profile owns billing country, locale,
+  currency, and dedicated proxy selection; proxy text must never infer the
+  profile. The API returns only active profile metadata and masked proxy
+  projections, atomically rewrites only PayPal's non-secret INI fields, then
+  resolves the newly selected environment-key pair at runtime.
+  PayPal verifies that the Checkout lists `paypal` and returns only the
+  Checkout URL. It does not create a Stripe payment method, submit a payment,
+  or allocate a provider-pending queue record. Pool values are comma- or
+  semicolon-separated URLs and must remain only in `.env`; tests use fixture
+  proxy URLs.
 - Checkout creation may rotate to the next regional proxy after a challenge or
   transport exception. Once Stripe returns a terminal submission state, the
   provider flow must preserve the Stripe error code and stop immediately rather
@@ -179,6 +195,8 @@ submits no query parameters to the event endpoint.
 | HTML route response | Cache-prevention headers are added before the response is returned. |
 | Static asset response | HTML cache middleware leaves its cache headers unchanged. |
 | Unsupported proxy-config provider | Configuration API returns HTTP 400. |
+| Missing or unsupported PayPal country, or country/locale pair | Profile API and direct PayPal request return HTTP 400 without rewriting `providers.ini`. |
+| PayPal profile save | Only `country` and `locale` in `[providers.paypal]` change atomically; the next proxy-config read reports the new regional key pair. |
 | No changed proxy-config field | `PUT /api/config/proxy` returns HTTP 400 without writing `.env`. |
 | Invalid proxy input | `PUT /api/config/proxy` returns HTTP 400 and leaves `.env` unchanged. |
 | No dedicated Provider proxy | `POST /api/config/proxy/test` returns HTTP 400; it must not test a generic proxy. |
@@ -204,6 +222,10 @@ submits no query parameters to the event endpoint.
   of a provider queue.
 - Good: `paypal` is enabled, creates a US/en Checkout, returns a normalized
   PayPal Checkout URL, and its queue tab routes to `view=tasks`.
+- Good: after selecting the TH profile, PayPal requests use THB billing,
+  `th-TH` headers, and only `OPENAI_PAY_PAYPAL_TH_*` dedicated candidates;
+  the BR profile follows the same contract with BRL, `pt-BR`, and
+  `OPENAI_PAY_PAYPAL_BR_*`.
 - Good: GCash config shows `OPENAI_PAY_PH_PROXY_POOL` and a pool count without
   exposing any configured entry, then writes validated replacements atomically.
 - Base: a client only configures `EXTRACT_LINK_API_BASE` and receives normal
@@ -212,6 +234,9 @@ submits no query parameters to the event endpoint.
   credentials in `providers.ini`.
 - Bad: loading a raw proxy URL into a configuration form, logging it, or
   testing a generic fallback when the selected provider has no dedicated proxy.
+- Bad: selecting a PayPal billing country from a proxy string, accepting an
+  arbitrary locale for a selected country, or adding payment confirmation to
+  the Checkout-link lifecycle.
 - Good: adding an enabled provider registry entry with a queue route makes it
   appear in the shared second-level navigation without editing every HTML page.
 - Base: `/debug-generate?provider=kakao_pay` selects native `korea` while the
@@ -273,9 +298,10 @@ submits no query parameters to the event endpoint.
   credentials.
 - Twint queue-page tests assert public `data-provider-page="twint"` maps to
   native `swiss` before any queue API request and retains Twint labels.
-- PayPal tests assert registry country/locale, dedicated US proxy precedence,
-  masked configuration, task filtering, and HTTP 409 when Checkout methods do
-  not include `paypal`.
+- PayPal tests assert US alias compatibility plus TH/BR country, locale,
+  currency, regional proxy precedence, masked configuration, atomic profile
+  updates that preserve unrelated INI lines, Facade profile propagation, task
+  filtering, and HTTP 409 when Checkout methods do not include `paypal`.
 - GoPay tests assert the masked dedicated proxy settings, ID/id facade request,
   Tasks route, normalized redirect result, and provider-pending rejection.
 - GrabPay tests assert masked dedicated proxy settings, PH/en facade request,
@@ -394,3 +420,22 @@ assert app.proxy_candidates_for_link_type("", "ideal") == [fixture_proxy]
 Provider-specific pools take precedence over generic pools. Tests must reset
 both dedicated values so machine-local `.env` configuration cannot change the
 asserted candidate order.
+
+#### Wrong
+
+```python
+country = country_from_proxy(proxy)
+request.billing_country = country
+```
+
+#### Correct
+
+```python
+profile = paypal_profile(request.billing_country, request.payment_locale)
+pool, fallback = paypal_proxy_source(profile["country"])
+```
+
+The explicit PayPal profile is the single source of truth for billing and
+dedicated proxy selection. This preserves deterministic US compatibility and
+allows a new country to be added through the profile catalogue without copying
+the Checkout lifecycle.

@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from korea_qr import build_korea_qr_bundle, render_qr_svg
+from paylink.provider_config import ProviderConfigError, load_provider_settings, write_provider_settings
 from paylink.provider_registry import PROVIDERS
 from paylink.redact import redact_text, redact_value
 from page_auth import (
@@ -319,6 +320,7 @@ LOCALE_MAP = {
     "ko": ("ko-KR", "ko"),
     "nl": ("nl-NL", "nl"),
     "pt-BR": ("pt-BR", "pt-BR"),
+    "th": ("th-TH", "th"),
     "zh-CN": ("zh-CN", "zh-CN"),
     "zh-TW": ("zh-TW", "zh-TW"),
 }
@@ -348,6 +350,12 @@ WALLET_APPROVAL_LINE_CONFIG = {
         "display_label": "GrabPay",
     },
 }
+PAYPAL_PROFILE_CHOICES = (
+    ("US", "en", "United States"),
+    ("TH", "th", "Thailand"),
+    ("BR", "pt-BR", "Brazil"),
+)
+PAYPAL_PROFILE_DEFAULT_LOCALES = {country: locale for country, locale, _label in PAYPAL_PROFILE_CHOICES}
 QUEUE_PROVIDER_LINK_TYPES = frozenset({"korea", "swiss", "ideal", "upi", "gcash"})
 FATAL_ACCOUNT_ERROR_CODES = {
     "token_invalidated",
@@ -524,6 +532,12 @@ class ProviderProxyUpdateRequest(BaseModel):
 
 class ProviderProxyTestRequest(BaseModel):
     provider: str = ""
+
+
+class ProviderProfileUpdateRequest(BaseModel):
+    provider: str = ""
+    country: str = ""
+    locale: str = ""
 
 
 def normalize_proxy_url(value: str, scheme: str = "http") -> str:
@@ -1362,8 +1376,73 @@ def explicit_proxy_for_link_type(proxy: str = "", link_type: str = "") -> str:
     return explicit
 
 
+def paypal_profile(country: str = "", locale: str = "") -> dict[str, str]:
+    normalized_country = str(country or "US").strip().upper() or "US"
+    default_locale = PAYPAL_PROFILE_DEFAULT_LOCALES.get(normalized_country)
+    if not default_locale:
+        raise HTTPException(status_code=400, detail=f"unsupported PayPal country profile '{normalized_country}'")
+    normalized_locale = str(locale or default_locale).strip()
+    if normalized_locale != default_locale:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported PayPal locale '{normalized_locale}' for country '{normalized_country}'",
+        )
+    return {
+        "country": normalized_country,
+        "locale": normalized_locale,
+        "currency": currency_for_country(normalized_country),
+    }
+
+
+def active_paypal_profile() -> dict[str, str]:
+    try:
+        settings = load_provider_settings(PROVIDERS["paypal"].config_section)
+    except ProviderConfigError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return paypal_profile(settings.country, settings.locale)
+
+
+def paypal_proxy_env_keys_for_country(country: str) -> tuple[str, str]:
+    profile = paypal_profile(country)
+    if profile["country"] == "US":
+        return PROVIDER_PROXY_ENV_KEYS["paypal"]
+    prefix = f"OPENAI_PAY_PAYPAL_{profile['country']}"
+    return f"{prefix}_PROXY", f"{prefix}_PROXY_POOL"
+
+
+def paypal_proxy_source(country: str) -> tuple[list[str], str]:
+    profile = paypal_profile(country)
+    fallback_key, pool_key = paypal_proxy_env_keys_for_country(profile["country"])
+    if profile["country"] == "US":
+        configured_pool = PAYPAL_PROXY_POOL
+        configured_fallback = PAYPAL_STAGE_PROXY
+    else:
+        configured_pool = parse_proxy_pool(str(os.getenv(pool_key, "") or ""))
+        configured_fallback = str(os.getenv(fallback_key, "") or "").strip()
+    if configured_pool:
+        return configured_pool, configured_fallback or proxy_for_region(DEFAULT_PROXY, profile["country"])
+    if configured_fallback:
+        return [], configured_fallback
+    return rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, profile["country"]), proxy_for_region(DEFAULT_PROXY, profile["country"])
+
+
+def paypal_proxy_config_view() -> dict[str, Any]:
+    profile = active_paypal_profile()
+    fallback_key, pool_key = paypal_proxy_env_keys_for_country(profile["country"])
+    return {
+        "country": profile["country"],
+        "locale": profile["locale"],
+        "currency": profile["currency"],
+        "fallback_key": fallback_key,
+        "pool_key": pool_key,
+    }
+
+
 def provider_proxy_env_keys(provider: str) -> tuple[str, str]:
     public_type = str(provider or "").strip().lower()
+    if public_type == "paypal":
+        profile = active_paypal_profile()
+        return paypal_proxy_env_keys_for_country(profile["country"])
     if public_type not in PROVIDERS or public_type not in PROVIDER_PROXY_ENV_KEYS:
         raise HTTPException(status_code=400, detail=f"unsupported provider '{public_type or '-'}'")
     return PROVIDER_PROXY_ENV_KEYS[public_type]
@@ -1400,7 +1479,7 @@ def proxy_config_view(provider: str) -> dict[str, Any]:
     fallback_value = str(os.getenv(fallback_key, "") or "").strip()
     pool_values = parse_proxy_pool(str(os.getenv(pool_key, "") or ""))
     definition = PROVIDERS[public_type]
-    return {
+    view = {
         "provider": public_type,
         "native_type": definition.native_type,
         "display_name": definition.display_name,
@@ -1416,6 +1495,9 @@ def proxy_config_view(provider: str) -> dict[str, Any]:
             "masked_values": ["configured"] * min(len(pool_values), 10),
         },
     }
+    if public_type == "paypal":
+        view["profile"] = paypal_proxy_config_view()
+    return view
 
 
 def _env_assignment(key: str, value: str) -> str:
@@ -1466,8 +1548,45 @@ def write_paylink_env_values(values: dict[str, str]) -> None:
 def apply_proxy_config_runtime(values: dict[str, str]) -> None:
     for key, value in values.items():
         os.environ[key] = value
-        runtime_name = PROXY_ENV_RUNTIME_NAMES[key]
+        runtime_name = PROXY_ENV_RUNTIME_NAMES.get(key)
+        if not runtime_name:
+            continue
         globals()[runtime_name] = parse_proxy_pool(value) if runtime_name.endswith("_POOL") else value
+
+
+def provider_profile_config_view(provider: str) -> dict[str, Any]:
+    public_type = str(provider or "").strip().lower()
+    if public_type != "paypal":
+        raise HTTPException(status_code=400, detail=f"provider '{public_type or '-'}' has no editable country profile")
+    profile = active_paypal_profile()
+    return {
+        "provider": "paypal",
+        "country": profile["country"],
+        "locale": profile["locale"],
+        "currency": profile["currency"],
+        "choices": [
+            {"country": country, "locale": locale, "label": label, "currency": currency_for_country(country)}
+            for country, locale, label in PAYPAL_PROFILE_CHOICES
+        ],
+    }
+
+
+def update_provider_profile_config(request: ProviderProfileUpdateRequest) -> dict[str, Any]:
+    public_type = str(request.provider or "").strip().lower()
+    if public_type != "paypal":
+        raise HTTPException(status_code=400, detail=f"provider '{public_type or '-'}' has no editable country profile")
+    if not str(request.country or "").strip():
+        raise HTTPException(status_code=400, detail="PayPal country profile is required")
+    profile = paypal_profile(request.country, request.locale)
+    try:
+        write_provider_settings(
+            PROVIDERS["paypal"].config_section,
+            {"country": profile["country"], "locale": profile["locale"]},
+        )
+    except ProviderConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    log_event("config.provider.save", "PayPal country profile saved", status=profile["country"])
+    return {"ok": True, "config": provider_profile_config_view("paypal")}
 
 
 def update_provider_proxy_config(request: ProviderProxyUpdateRequest) -> dict[str, Any]:
@@ -1536,11 +1655,9 @@ def effective_default_proxy(proxy: str = "", link_type: str = "") -> str:
         )
         return next_proxy("grabpay", pool, fallback)
     if normalized_link_type == "paypal":
-        return next_proxy(
-            "paypal",
-            PAYPAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "US"),
-            PAYPAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US"),
-        )
+        profile = active_paypal_profile()
+        pool, fallback = paypal_proxy_source(profile["country"])
+        return next_proxy(f"paypal:{profile['country']}", pool, fallback)
     wallet_config = wallet_approval_line_config(normalized_link_type)
     if wallet_config:
         return next_proxy(
@@ -1604,8 +1721,8 @@ def proxy_candidates_for_link_type(proxy: str = "", link_type: str = "") -> list
             proxy_for_region(DEFAULT_PROXY, "PH"),
         )
     elif normalized_link_type == "paypal":
-        pool = PAYPAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "US")
-        fallback = PAYPAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US")
+        profile = active_paypal_profile()
+        pool, fallback = paypal_proxy_source(profile["country"])
     elif wallet_approval_line_config(normalized_link_type):
         wallet_config = wallet_approval_line_config(normalized_link_type)
         pool = GOPAY_PROVIDER_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, wallet_config["proxy_region"])
@@ -1623,6 +1740,36 @@ def proxy_candidates_for_link_type(proxy: str = "", link_type: str = "") -> list
         seen.add(value)
         candidates.append(value)
     return candidates
+
+
+def proxy_candidates_for_request(req: LongLinkRequest) -> list[str]:
+    normalized_link_type = normalize_link_type(req.link_type)
+    if normalized_link_type != "paypal":
+        return proxy_candidates_for_link_type(req.proxy, req.link_type)
+    explicit = explicit_proxy_for_link_type(req.proxy, normalized_link_type)
+    if explicit:
+        return [explicit]
+    profile = paypal_profile(req.billing_country, req.payment_locale)
+    pool, fallback = paypal_proxy_source(profile["country"])
+    candidates: list[str] = []
+    seen = set()
+    for item in [*pool, normalize_proxy_url(fallback)]:
+        value = str(item or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            candidates.append(value)
+    return candidates
+
+
+def effective_default_proxy_for_request(req: LongLinkRequest) -> str:
+    if normalize_link_type(req.link_type) != "paypal":
+        return effective_default_proxy(req.proxy, req.link_type)
+    explicit = explicit_proxy_for_link_type(req.proxy, req.link_type)
+    if explicit:
+        return explicit
+    profile = paypal_profile(req.billing_country, req.payment_locale)
+    pool, fallback = paypal_proxy_source(profile["country"])
+    return next_proxy(f"paypal:{profile['country']}", pool, fallback)
 
 
 def set_proxy_url(session: Any, proxy: str) -> None:
@@ -1855,7 +2002,7 @@ def normalize_provider_payment_method_type(value: str) -> str:
 def effective_country(req: LongLinkRequest) -> str:
     link_type = normalize_link_type(req.link_type)
     if link_type == "paypal":
-        return "US"
+        return paypal_profile(req.billing_country, req.payment_locale)["country"]
     wallet_config = wallet_approval_line_config(link_type)
     if wallet_config:
         return wallet_config["country"]
@@ -1876,7 +2023,7 @@ def locale_parts(locale: str) -> tuple[str, str]:
     return LOCALE_MAP.get(str(locale or "").strip(), LOCALE_MAP["en"])
 
 
-def effective_payment_locale(link_type: str, requested: str = "") -> str:
+def effective_payment_locale(link_type: str, requested: str = "", country: str = "") -> str:
     normalized = normalize_link_type(link_type)
     if normalized == "pix":
         return "pt-BR"
@@ -1889,7 +2036,7 @@ def effective_payment_locale(link_type: str, requested: str = "") -> str:
     if normalized == "upi":
         return "en"
     if normalized == "paypal":
-        return "en"
+        return paypal_profile(country or "US", requested)["locale"]
     wallet_config = wallet_approval_line_config(normalized)
     if wallet_config:
         return wallet_config["payment_locale"]
@@ -2153,7 +2300,7 @@ def build_chatgpt_session(req: LongLinkRequest) -> Any:
 
     device_id = req.device_id.strip() or str(uuid.uuid4())
     user_agent = req.user_agent.strip() or DEFAULT_USER_AGENT
-    browser_locale, _ = locale_parts(effective_payment_locale(req.link_type, req.payment_locale))
+    browser_locale, _ = locale_parts(effective_payment_locale(req.link_type, req.payment_locale, req.billing_country))
     accept_language = accept_language_for_browser_locale(browser_locale)
     session = new_session()
     session.headers.update(
@@ -2176,7 +2323,7 @@ def build_chatgpt_session(req: LongLinkRequest) -> Any:
             "Cookie": f"oai-did={device_id}",
         }
     )
-    set_proxy(session, req.proxy, req.link_type)
+    set_proxy_url(session, effective_default_proxy_for_request(req))
     return session
 
 
@@ -2693,7 +2840,7 @@ def create_checkout(req: LongLinkRequest, chatgpt_session: Any | None = None) ->
 
 
 def create_checkout_with_proxy_retry(req: LongLinkRequest) -> tuple[dict[str, Any], Any]:
-    proxy_candidates = proxy_candidates_for_link_type(req.proxy, req.link_type)
+    proxy_candidates = proxy_candidates_for_request(req)
     attempt_count = min(max(1, len(proxy_candidates)), MAX_CHECKOUT_PROXY_ATTEMPTS)
     last_error: Exception | None = None
     for attempt_index, proxy_value in enumerate(proxy_candidates[:attempt_count], start=1):
@@ -2832,7 +2979,7 @@ def sync_pix_promotion_and_br_taxes(
 
 def stripe_init(cs_id: str, req: LongLinkRequest, proxy_override: str = "") -> dict[str, Any]:
     stripe_pk = req.stripe_publishable_key.strip() or DEFAULT_STRIPE_PK
-    browser_locale, elements_locale = locale_parts(effective_payment_locale(req.link_type, req.payment_locale))
+    browser_locale, elements_locale = locale_parts(effective_payment_locale(req.link_type, req.payment_locale, req.billing_country))
     stripe = new_session()
     stripe.headers.update(
         {
@@ -2873,7 +3020,7 @@ def stripe_init(cs_id: str, req: LongLinkRequest, proxy_override: str = "") -> d
 
 
 def stripe_init_gopay_checksum(stripe: Any, cs_id: str, stripe_pk: str, req: LongLinkRequest) -> str:
-    browser_locale, elements_locale = locale_parts(effective_payment_locale(req.link_type, req.payment_locale))
+    browser_locale, elements_locale = locale_parts(effective_payment_locale(req.link_type, req.payment_locale, req.billing_country))
     body = {
         "browser_locale": browser_locale,
         "browser_timezone": browser_timezone_for_link_type(req.link_type),
@@ -3013,7 +3160,7 @@ def pix_final_init_checked(
 
 
 def stripe_context(cs_id: str, init_payload: dict[str, Any], req: LongLinkRequest) -> dict[str, Any]:
-    _, elements_locale = locale_parts(effective_payment_locale(req.link_type, req.payment_locale))
+    _, elements_locale = locale_parts(effective_payment_locale(req.link_type, req.payment_locale, req.billing_country))
     return {
         "stripe_js_id": str(uuid.uuid4()),
         "elements_session_id": f"elements_session_{uuid.uuid4().hex[:11]}",
@@ -5138,6 +5285,18 @@ def test_provider_proxy_config(request: Request, payload: ProviderProxyTestReque
     return provider_proxy_connectivity_test(payload.provider)
 
 
+@app.get("/api/config/provider")
+def get_provider_profile_config(request: Request, provider: str = "") -> dict[str, Any]:
+    require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    return {"ok": True, "config": provider_profile_config_view(provider)}
+
+
+@app.put("/api/config/provider")
+def save_provider_profile_config(request: Request, payload: ProviderProfileUpdateRequest) -> dict[str, Any]:
+    require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
+    return update_provider_profile_config(payload)
+
+
 @app.get("/api/provider/pending")
 def provider_pending(request: Request, link_type: str = "", limit: int = 20) -> dict[str, Any]:
     require_api_scope(request, QR_SCOPE, ZC_DEFAULT_JWT_SECRET)
@@ -5353,7 +5512,7 @@ def generate_long_link_core(req: LongLinkRequest) -> LongLinkResponse:
             checkout_url=checkout_short_url,
             billing_country=checkout["billing_country"],
             currency=checkout["currency"],
-            payment_locale=locale_parts(effective_payment_locale(req.link_type, req.payment_locale))[0],
+            payment_locale=locale_parts(effective_payment_locale(req.link_type, req.payment_locale, req.billing_country))[0],
             link_type=link_type,
             payment_method_type=payment_method_type,
             payment_method_id=str(provider_fields.get("payment_method_id") or ""),

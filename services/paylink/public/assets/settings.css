@@ -98,6 +98,7 @@ body.settings-page {
 }
 
 .proxy-config input[type="text"],
+.proxy-config select,
 .proxy-config textarea {
   display: block;
   width: 100%;
@@ -115,6 +116,11 @@ body.settings-page {
   padding: 9px 11px;
 }
 
+.proxy-config select {
+  min-height: 42px;
+  padding: 9px 36px 9px 11px;
+}
+
 .proxy-config textarea {
   min-height: 172px;
   padding: 10px 11px;
@@ -122,6 +128,7 @@ body.settings-page {
 }
 
 .proxy-config input:focus-visible,
+.proxy-config select:focus-visible,
 .proxy-config textarea:focus-visible,
 .proxy-config button:focus-visible,
 .proxy-config__toggle input:focus-visible + span {
@@ -130,10 +137,27 @@ body.settings-page {
 }
 
 .proxy-config input:disabled,
+.proxy-config select:disabled,
 .proxy-config textarea:disabled {
   background: var(--settings-soft);
   color: #98a2b3;
   cursor: not-allowed;
+}
+
+.proxy-config__inline-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.proxy-config__inline-field .proxy-config__label {
+  grid-column: 1 / -1;
+  margin-bottom: -3px;
+}
+
+.proxy-config__inline-field button {
+  min-width: 96px;
 }
 
 .proxy-config__toggle {
@@ -229,5 +253,13 @@ body.settings-page {
   .proxy-config__status {
     padding-right: 16px;
     padding-left: 16px;
+  }
+
+  .proxy-config__inline-field {
+    grid-template-columns: 1fr;
+  }
+
+  .proxy-config__inline-field button {
+    width: 100%;
   }
 }

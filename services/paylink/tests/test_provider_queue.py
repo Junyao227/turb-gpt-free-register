@@ -160,12 +160,12 @@ def test_gcash_line_mapping():
 
 
 def test_paypal_line_mapping_and_checkout_availability_failure():
-    req = app.LongLinkRequest(link_type="paypal", billing_country="PH", payment_locale="en-PH")
+    req = app.LongLinkRequest(link_type="paypal", billing_country="US", payment_locale="en")
 
     assert app.normalize_link_type("pp") == "paypal"
     assert app.payment_method_type_for_link_type("paypal") == "paypal"
     assert app.effective_country(req) == "US"
-    assert app.effective_payment_locale("paypal", req.payment_locale) == "en"
+    assert app.effective_payment_locale("paypal", req.payment_locale, req.billing_country) == "en"
 
     response = SimpleNamespace(
         status_code=200,
@@ -175,6 +175,36 @@ def test_paypal_line_mapping_and_checkout_availability_failure():
     )
     with pytest.raises(HTTPException, match="paypal line is unavailable.*gcash"):
         app.parse_checkout_response(response, req)
+
+
+@pytest.mark.parametrize(
+    ("country", "locale", "currency", "browser_locale"),
+    (("TH", "th", "THB", "th-TH"), ("BR", "pt-BR", "BRL", "pt-BR")),
+)
+def test_paypal_regional_profile_drives_checkout_body_session_and_proxy(monkeypatch, country, locale, currency, browser_locale):
+    proxy = f"http://fixture-{country.lower()}:fixture-pass@{country.lower()}-proxy.example.test:443"
+    pool_key = f"OPENAI_PAY_PAYPAL_{country}_PROXY_POOL"
+    monkeypatch.setenv(pool_key, proxy)
+    monkeypatch.setenv(f"OPENAI_PAY_PAYPAL_{country}_PROXY", "")
+    monkeypatch.setitem(app._proxy_cursor, f"paypal:{country}", 0)
+    req = app.LongLinkRequest(link_type="paypal", billing_country=country, payment_locale=locale, accessToken="fixture-token")
+
+    body = app.checkout_request_body(req)
+    session = app.build_chatgpt_session(req)
+
+    assert app.effective_country(req) == country
+    assert app.effective_payment_locale("paypal", "", country) == locale
+    assert body["billing_details"] == {"country": country, "currency": currency}
+    assert session.headers["oai-language"] == browser_locale
+    assert browser_locale in session.headers["Accept-Language"]
+    assert session.proxies["https"] == proxy
+
+
+def test_paypal_rejects_a_country_or_locale_outside_the_maintained_profile_catalogue():
+    with pytest.raises(HTTPException, match="unsupported PayPal country profile"):
+        app.effective_country(app.LongLinkRequest(link_type="paypal", billing_country="JP", payment_locale="ja"))
+    with pytest.raises(HTTPException, match="unsupported PayPal locale"):
+        app.effective_country(app.LongLinkRequest(link_type="paypal", billing_country="TH", payment_locale="en"))
 
 
 def test_paypal_core_returns_standard_checkout_without_provider_submission(monkeypatch):
@@ -194,7 +224,7 @@ def test_paypal_core_returns_standard_checkout_without_provider_submission(monke
     monkeypatch.setattr(app, "provider_stage_proxy", lambda _req: pytest.fail("PayPal must not start a provider stage"))
 
     result = app.generate_long_link_core(
-        app.LongLinkRequest(link_type="paypal", billing_country="PH", payment_locale="en-PH", job_id="paypal-core-test")
+        app.LongLinkRequest(link_type="paypal", billing_country="US", payment_locale="en", job_id="paypal-core-test")
     )
 
     assert result.link_type == "paypal"

@@ -405,6 +405,46 @@ def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result():
     assert result["payment_method"] == "paypal"
 
 
+@pytest.mark.parametrize(
+    ("country", "locale"),
+    (("TH", "th"), ("BR", "pt-BR")),
+)
+def test_facade_paypal_job_uses_the_active_regional_profile(tmp_path, country, locale):
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        f"[providers.paypal]\nenabled = true\ncountry = {country}\nlocale = {locale}\n",
+        encoding="utf-8",
+    )
+    store = ProgressStore()
+    captured_requests = []
+
+    def request_factory(**kwargs):
+        captured_requests.append(dict(kwargs))
+        return kwargs
+
+    facade = CompatibilityFacade(
+        request_factory=request_factory,
+        generate_core=lambda _request: {
+            "checkout_url": "https://checkout.example.test/paypal",
+            "long_url": "https://checkout.example.test/paypal",
+            "payment_method_type": "paypal",
+        },
+        set_progress=store.set_progress,
+        get_progress=store.get_progress,
+        log_event=lambda *_args, **_kwargs: None,
+        provider_resolver=lambda link_type: resolve_provider(link_type, config_path),
+    )
+
+    job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="paypal"))
+    events = list(facade.iter_events(job_id))
+
+    assert captured_requests[0]["link_type"] == "paypal"
+    assert captured_requests[0]["billing_country"] == country
+    assert captured_requests[0]["payment_locale"] == locale
+    assert store.snapshots[job_id]["link_type"] == "paypal"
+    assert _event_data(events[-2])["result"]["payment_link_type"] == "paypal"
+
+
 def test_normalize_result_falls_back_to_checkout_url():
     result = normalize_result({"checkout_url": "https://checkout.example.test", "payment_method_type": "pix"}, "pix")
 

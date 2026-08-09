@@ -12,6 +12,10 @@
   const saveButton = document.querySelector("#saveButton");
   const testButton = document.querySelector("#testButton");
   const formStatus = document.querySelector("#formStatus");
+  const paypalProfileSection = document.querySelector("#paypalProfileSection");
+  const paypalProfileState = document.querySelector("#paypalProfileState");
+  const paypalCountry = document.querySelector("#paypalCountry");
+  const saveProfileButton = document.querySelector("#saveProfileButton");
   const provider = String(new URLSearchParams(window.location.search).get("provider") || "pix").trim().toLowerCase();
 
   function setStatus(message, kind = "") {
@@ -22,6 +26,7 @@
   function setBusy(busy) {
     saveButton.disabled = busy;
     testButton.disabled = busy;
+    if (saveProfileButton) saveProfileButton.disabled = busy;
   }
 
   function setUpdateState() {
@@ -62,12 +67,58 @@
     proxyPool.placeholder = pool.configured ? "已配置，输入新代理池后保存" : "每行一个代理地址";
   }
 
+  function displayProfile(config) {
+    if (!paypalProfileSection || !paypalCountry || !paypalProfileState) return;
+    paypalProfileSection.hidden = false;
+    const choices = Array.isArray(config.choices) ? config.choices : [];
+    paypalCountry.replaceChildren();
+    choices.forEach((choice) => {
+      const option = document.createElement("option");
+      option.value = String(choice.country || "");
+      option.textContent = `${choice.label || choice.country} (${choice.country || "-"} / ${choice.currency || "-"})`;
+      option.selected = option.value === String(config.country || "");
+      paypalCountry.append(option);
+    });
+    paypalProfileState.textContent = `${config.country || "-"} / ${config.locale || "-"} / ${config.currency || "-"}`;
+  }
+
+  async function loadProfile() {
+    if (provider !== "paypal") return;
+    const response = await fetch(`/api/config/provider?provider=${encodeURIComponent(provider)}`, { cache: "no-store" });
+    const payload = await responseData(response);
+    displayProfile(payload.config || {});
+  }
+
   async function loadConfig() {
     setStatus("加载中...");
     const response = await fetch(`/api/config/proxy?provider=${encodeURIComponent(provider)}`, { cache: "no-store" });
     const payload = await responseData(response);
     displayConfig(payload.config || {});
+    await loadProfile();
     setStatus("配置已加载");
+  }
+
+  if (saveProfileButton) {
+    saveProfileButton.addEventListener("click", async () => {
+      if (provider !== "paypal" || !paypalCountry) return;
+      setBusy(true);
+      setStatus("Saving profile...");
+      try {
+        const response = await fetch("/api/config/provider", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, country: paypalCountry.value }),
+        });
+        const result = await responseData(response);
+        displayProfile(result.config || {});
+        await loadConfig();
+        setStatus("Profile saved", "success");
+      } catch (error) {
+        setStatus(error.message || "Profile save failed", "error");
+      } finally {
+        setBusy(false);
+      }
+    });
   }
 
   form.addEventListener("submit", async (event) => {

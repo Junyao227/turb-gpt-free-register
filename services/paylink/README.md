@@ -13,11 +13,36 @@ operator console and adds a compatibility API for the registration project.
 - `gcash` (native `gcash`, PH / PHP)
 - `gopay` (native approval flow, ID / IDR; operator tracking uses Tasks)
 - `grabpay` (native approval flow, PH / PHP; operator tracking uses Tasks)
-- `paypal` (standard Checkout link, US / USD)
+- `paypal` (standard Checkout link; selectable US / USD, Thailand / THB, or Brazil / BRL profile)
 
 Provider switches and their non-secret country/locale settings are in
 `config/providers.ini`. Keep proxy credentials and other secrets in `.env`;
 start from `.env.example`.
+
+## PayPal Regional Profiles
+
+PayPal remains a Checkout-link provider: it returns the Checkout URL only and
+does not create a payment method or submit a payment. Select its active country
+from the Paylink Settings page, or edit `[providers.paypal]` in
+`config/providers.ini`:
+
+```ini
+[providers.paypal]
+enabled = true
+country = TH
+locale = th
+```
+
+The supported profiles are `US` / `en` / `USD`, `TH` / `th` / `THB`, and
+`BR` / `pt-BR` / `BRL`. The selected profile determines the Checkout billing
+country, locale, currency, and dedicated proxy source. It is explicit: proxy
+text never determines the country.
+
+Use `OPENAI_PAY_PAYPAL_PROXY` and `OPENAI_PAY_PAYPAL_PROXY_POOL` for the
+default US profile. Thailand uses `OPENAI_PAY_PAYPAL_TH_PROXY` and
+`OPENAI_PAY_PAYPAL_TH_PROXY_POOL`; Brazil uses
+`OPENAI_PAY_PAYPAL_BR_PROXY` and `OPENAI_PAY_PAYPAL_BR_PROXY_POOL`. Keep all
+proxy values in `.env`, not in `providers.ini`.
 
 ## Run Locally
 
