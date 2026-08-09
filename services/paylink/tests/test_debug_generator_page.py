@@ -44,6 +44,7 @@ def test_debug_generate_asset_exists():
     assert "菲律宾 GCash（PH / PHP）" in text
     assert "美国 PayPal（US / USD）" in text
     assert "印尼 GoPay（ID / IDR）" in text
+    assert "Twint（CH / CHF）" in text
     assert "菲律宾 GCash（PH / PHP）" in text
     assert "菲律宾 GrabPay（PH / PHP）" in text
     assert "upi_hosted_url" in text
@@ -95,6 +96,7 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
         "stats.html",
         "qr.html",
         "kr-qr.html",
+        "ch-qr.html",
         "in-qr.html",
         "nl-qr.html",
         "ph-qr.html",
@@ -109,7 +111,7 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
         text = read_public_asset(page)
         assert "/assets/app-shell.css" in text
         assert "/assets/app-shell.js" in text
-        assert "v=20260809-shell4" in text
+        assert "v=20260809-shell5" in text
 
     assert 'fetch("/api/providers"' in shell_js
     assert '["generate", "生成中心"]' in shell_js
@@ -119,6 +121,8 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
     assert '["stats", "运行统计"]' in shell_js
     assert '["settings", "配置"]' in shell_js
     assert 'korea: "kakao_pay"' in shell_js
+    assert 'swiss: "twint"' in shell_js
+    assert '"/ch-qr": "twint"' in shell_js
     assert '"/ph-qr": "gcash"' in shell_js
     assert 'return `/?provider=${publicType}&view=tasks`' in shell_js
     assert 'return `/settings?provider=${publicType}`' in shell_js
@@ -146,8 +150,8 @@ def test_proxy_configuration_page_and_routes_exist():
     assert "/settings" in route_paths
     assert "/api/config/proxy" in route_paths
     assert "/api/config/proxy/test" in route_paths
-    assert "/assets/app-shell.css?v=20260809-shell4" in settings
-    assert "/assets/app-shell.js?v=20260809-shell4" in settings
+    assert "/assets/app-shell.css?v=20260809-shell5" in settings
+    assert "/assets/app-shell.js?v=20260809-shell5" in settings
     assert "/assets/settings.js" in settings
     assert 'fetch(`/api/config/proxy?provider=${encodeURIComponent(provider)}`' in settings_js
     assert 'fetch("/api/config/proxy",' in settings_js
@@ -161,11 +165,14 @@ def test_home_and_debug_pages_accept_public_provider_query_values():
     assert '<option value="ideal">荷兰 iDEAL（NL / EUR）</option>' in home
     assert '<option value="gcash">菲律宾 GCash（PH / PHP）</option>' in home
     assert '<option value="paypal">美国 PayPal（US / USD）</option>' in home
+    assert '<option value="swiss">Twint（CH / CHF）</option>' in home
     assert 'gcash: {' in home
     assert 'paypal: {' in home
     assert 'paypal:["US","en"]' in debug
-    assert 'requested === "kakao_pay" ? "korea" : requested' in home
-    assert 'requested === "kakao_pay" ? "korea" : requested' in debug
+    assert 'swiss: "twint"' in home
+    assert 'swiss: "twint"' in debug
+    assert 'twint: "swiss"' in home
+    assert 'twint: "swiss"' in debug
     assert 'new CustomEvent("paylink:provider-change"' in home
     assert 'new CustomEvent("paylink:provider-change"' in debug
     assert 'function currentConsoleView()' in home
@@ -328,7 +335,7 @@ def test_provider_metadata_route_returns_enabled_registry_entries():
 
     assert response.status_code == 200
     assert payload["ok"] is True
-    assert [item["public_type"] for item in payload["providers"]] == ["pix", "upi", "kakao_pay", "ideal", "gcash", "paypal"]
+    assert [item["public_type"] for item in payload["providers"]] == ["pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"]
 
 
 def test_debug_generate_page_requires_admin_auth(monkeypatch):

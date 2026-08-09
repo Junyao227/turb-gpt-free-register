@@ -13,7 +13,7 @@
 
 ```text
 POST /api/extract
-  request:  { "token": string, "link_type": "pix" | "upi" | "kakao_pay" | "ideal" | "gcash" | "paypal" }
+  request:  { "token": string, "link_type": "pix" | "upi" | "kakao_pay" | "twint" | "ideal" | "gcash" | "gopay" | "paypal" }
   response: { "ok": true, "job_id": string }
 
 GET /api/jobs/{job_id}/events
@@ -60,8 +60,9 @@ payment_page_terminal_failure(payload: object) -> string
 ```
 
 `kakao_pay` is mapped only by `paylink.provider_registry` to OPLL2's native
-`korea` provider. The root client submits no query parameters to the event
-endpoint.
+`korea` provider; `twint` is mapped only by that registry to native `swiss`.
+`gopay` retains the same public and native type. The root client submits no
+query parameters to the event endpoint.
 
 ### 3. Contracts
 
@@ -70,6 +71,15 @@ endpoint.
 - `paylink.provider_registry` owns provider public/native identity, display
   name, and queue route. `GET /api/providers` returns enabled definitions in
   registry order and is the only provider catalog consumed by the console.
+- Twint uses public `twint`, native `swiss`, `CH` / `de`, and the maintained
+  `/ch-qr` queue. Its masked proxy settings are `OPENAI_PAY_SWISS_PROXY` and
+  `OPENAI_PAY_SWISS_PROXY_POOL`; the public alias never creates a new proxy
+  credential surface.
+- GoPay uses public/native `gopay`, `ID` / `id`, and the shared Tasks route
+  `/?provider=gopay&view=tasks`. Its masked settings are
+  `OPENAI_PAY_GOPAY_PROVIDER_PROXY` and
+  `OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL`. The maintained approval flow does
+  not create a provider-pending record or use the historical `/id-qr` page.
 - Secrets and proxy credentials come from `services/paylink/.env`; they are
   redacted before logs and progress snapshots are persisted.
 - The administrator-only `/settings` page keeps the shared global shell and
@@ -92,7 +102,9 @@ endpoint.
   route is PIX `BR -> VN -> BR`, UPI `IN`, Kakao Pay `KR`, iDEAL `NL`, and
   GCash `PH`. GCash reads `OPENAI_PAY_PH_PROXY` and
   `OPENAI_PAY_PH_PROXY_POOL` before generic fallbacks; it must not reuse the
-  GoPay pool.
+  GoPay pool. GoPay uses its dedicated approval pool first and keeps its
+  established JP provider-stage fallback; billing `ID` must not rewrite that
+  provider-stage fallback.
 - PayPal is a standard US Checkout-link Provider. It reads
   `OPENAI_PAY_PAYPAL_PROXY` and `OPENAI_PAY_PAYPAL_PROXY_POOL` before generic
   US Checkout candidates, verifies that the Checkout lists `paypal`, and
@@ -150,6 +162,8 @@ endpoint.
 | Generator exception | Progress is marked failed with redacted text; stream emits `error`, then `done`. |
 | Service restart during a job | The first stream consumer marks the unsupervised job interrupted, then receives `error`, then `done`. |
 | Provider disabled | It is omitted from `GET /api/providers` and cannot appear as an active console tab. |
+| Twint queue page | The public page identity stays `twint`, while queue, delete, and clear requests use native `swiss`. |
+| GoPay queue request | `gopay` is rejected by provider-pending APIs; its public queue action returns the filtered Tasks view. |
 | Provider config missing or invalid | `GET /api/providers` returns HTTP 500 with the non-secret configuration diagnostic. |
 | Provider metadata request fails in the browser | Global navigation remains usable; the shell does not invent fallback provider tabs. |
 | `view=tasks` is absent or unknown | The home console renders the Generate view. |
@@ -172,6 +186,11 @@ endpoint.
   one `done` event.
 - Good: `gcash` is enabled, creates native `gcash` requests with PH/PHP
   billing, and routes pending sessions to `/ph-qr`.
+- Good: `twint` is enabled, creates native `swiss` requests with CH/de
+  billing, and its Twint-labelled `/ch-qr` page uses native `swiss` queue APIs.
+- Good: `gopay` is enabled, creates ID/id native approval requests, returns a
+  provider redirect only after approval, and directs operators to filtered
+  Tasks instead of a provider queue.
 - Good: `paypal` is enabled, creates a US/en Checkout, returns a normalized
   PayPal Checkout URL, and its queue tab routes to `view=tasks`.
 - Good: GCash config shows `OPENAI_PAY_PH_PROXY_POOL` and a pool count without
@@ -204,8 +223,10 @@ endpoint.
 
 ### 6. Tests Required
 
-- Registry tests assert all five public names resolve, `kakao_pay` resolves to
-  `korea`, and `gcash` resolves to native `gcash` with `PH` / `en-PH`.
+- Registry tests assert all eight public names resolve, `kakao_pay` resolves
+  to `korea`, `twint` resolves to `swiss` with `CH` / `de`, `gopay` resolves
+  to native `gopay` with `ID` / `id`, and `gcash` resolves to native `gcash`
+  with `PH` / `en-PH`.
 - A disabled provider test asserts no job is started.
 - Facade lifecycle tests assert a single terminal result sequence and absence
   of the supplied access token from saved state and logs.
@@ -219,12 +240,13 @@ endpoint.
   paths, and omission of disabled providers.
 - Console shell tests assert all operator pages load the shared assets, global
   labels remain stable, provider data comes from `/api/providers`, and home /
-  debug pages translate the public `kakao_pay` query value.
+  debug pages translate the public `kakao_pay` and `twint` query values.
 - Home-view tests assert Tasks links use `view=tasks`, Generate and Tasks hide
   opposite sections, and provider links preserve the active view.
 - Task-list tests assert provider filtering occurs before summary and pagination,
   includes failed snapshots, and can infer the public Kakao Pay alias from a
-  legacy facade result that lacks the persisted field.
+  legacy facade result that lacks the persisted field; native GoPay snapshots
+  remain under the public GoPay Tasks tab.
 - Cache tests call the HTML middleware with both `text/html` and static media
   types, asserting all three no-store headers only on the HTML response.
 - Shared-shell tests assert every operator page uses the same asset version and
@@ -232,12 +254,17 @@ endpoint.
 - Browser verification covers desktop and 390px widths, active states,
   generation/debug/queue routing, internal horizontal scrolling, document
   width, and console errors.
-- Proxy tests assert PIX uses BR/VN, UPI uses IN, Kakao Pay uses KR, iDEAL
-  uses NL, and GCash prefers its dedicated PH pool without including live
-  proxy hosts or credentials.
+- Proxy tests assert PIX uses BR/VN, UPI uses IN, Kakao Pay uses KR, Twint
+  uses its existing dedicated CH Swiss pool, GoPay puts its dedicated approval
+  pool ahead of the maintained JP fallback, iDEAL uses NL, and GCash prefers
+  its dedicated PH pool without including live proxy hosts or credentials.
+- Twint queue-page tests assert public `data-provider-page="twint"` maps to
+  native `swiss` before any queue API request and retains Twint labels.
 - PayPal tests assert registry country/locale, dedicated US proxy precedence,
   masked configuration, task filtering, and HTTP 409 when Checkout methods do
   not include `paypal`.
+- GoPay tests assert the masked dedicated proxy settings, ID/id facade request,
+  Tasks route, normalized redirect result, and provider-pending rejection.
 - Tests that patch one proxy selection path must explicitly clear every more
   specific pool used by that path. Module globals load `.env` at import time,
   so a local configured pool must never influence a fixture assertion.

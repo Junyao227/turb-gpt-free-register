@@ -8,8 +8,10 @@ operator console and adds a compatibility API for the registration project.
 - `pix`
 - `upi`
 - `kakao_pay` (implemented by OPLL2's native `korea` provider)
+- `twint` (implemented by OPLL2's native `swiss` provider, CH / CHF)
 - `ideal`
 - `gcash` (native `gcash`, PH / PHP)
+- `gopay` (native approval flow, ID / IDR; operator tracking uses Tasks)
 - `paypal` (standard Checkout link, US / USD)
 
 Provider switches and their non-secret country/locale settings are in

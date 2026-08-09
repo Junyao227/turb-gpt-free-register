@@ -5,7 +5,7 @@ from config.env_loader import apply_env_overrides
 # 提链服务地址
 EXTRACT_LINK_API_BASE: str = ""
 
-# 提链类型：pix / upi / kakao_pay / ideal / gcash / paypal
+# 提链类型：pix / upi / kakao_pay / twint / ideal / gcash / gopay / paypal
 EXTRACT_LINK_TYPE: str = "pix"
 
 # 后台提链并发与超时

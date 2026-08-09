@@ -41,8 +41,10 @@ def _event_data(value: str) -> dict:
         ("pix", "pix", "BR", "pt-BR"),
         ("upi", "upi", "IN", "en"),
         ("kakao_pay", "korea", "KR", "ko"),
+        ("twint", "swiss", "CH", "de"),
         ("ideal", "ideal", "NL", "nl"),
         ("gcash", "gcash", "PH", "en-PH"),
+        ("gopay", "gopay", "ID", "id"),
         ("paypal", "paypal", "US", "en"),
     ],
 )
@@ -57,9 +59,9 @@ def test_registry_resolves_first_release_providers(public_type, native_type, cou
 def test_enabled_provider_metadata_exposes_console_routes():
     providers = enabled_provider_metadata()
 
-    assert [item["public_type"] for item in providers] == ["pix", "upi", "kakao_pay", "ideal", "gcash", "paypal"]
-    assert [item["display_name"] for item in providers] == ["PIX", "UPI", "Kakao Pay", "iDEAL", "GCash", "PayPal"]
-    assert [item["queue_path"] for item in providers] == ["/qr", "/in-qr", "/kr-qr", "/nl-qr", "/ph-qr", "/?provider=paypal&view=tasks"]
+    assert [item["public_type"] for item in providers] == ["pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"]
+    assert [item["display_name"] for item in providers] == ["PIX", "UPI", "Kakao Pay", "Twint", "iDEAL", "GCash", "GoPay", "PayPal"]
+    assert [item["queue_path"] for item in providers] == ["/qr", "/in-qr", "/kr-qr", "/ch-qr", "/nl-qr", "/ph-qr", "/?provider=gopay&view=tasks", "/?provider=paypal&view=tasks"]
     assert providers[2]["native_type"] == "korea"
 
 
@@ -79,6 +81,10 @@ locale = en
 enabled = true
 country = KR
 locale = ko
+[providers.twint]
+enabled = true
+country = CH
+locale = de
 [providers.ideal]
 enabled = true
 country = NL
@@ -87,6 +93,10 @@ locale = nl
 enabled = true
 country = PH
 locale = en-PH
+[providers.gopay]
+enabled = true
+country = ID
+locale = id
 [providers.paypal]
 enabled = true
 country = US
@@ -97,7 +107,7 @@ locale = en
 
     providers = enabled_provider_metadata(config_path)
 
-    assert [item["public_type"] for item in providers] == ["pix", "kakao_pay", "ideal", "gcash", "paypal"]
+    assert [item["public_type"] for item in providers] == ["pix", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"]
 
 
 def test_disabled_provider_is_rejected_before_job_creation(tmp_path):
@@ -120,6 +130,28 @@ def test_disabled_paypal_provider_is_rejected_before_job_creation(tmp_path):
 
     with pytest.raises(ProviderConfigError, match="disabled"):
         resolve_provider("paypal", config_path)
+
+
+def test_disabled_twint_provider_is_rejected_before_job_creation(tmp_path):
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        "[providers.twint]\nenabled = false\ncountry = CH\nlocale = de\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProviderConfigError, match="disabled"):
+        resolve_provider("twint", config_path)
+
+
+def test_disabled_gopay_provider_is_rejected_before_job_creation(tmp_path):
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        "[providers.gopay]\nenabled = false\ncountry = ID\nlocale = id\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProviderConfigError, match="disabled"):
+        resolve_provider("gopay", config_path)
 
 
 def test_unknown_provider_is_rejected():
@@ -220,6 +252,73 @@ def test_facade_gcash_job_uses_native_ph_request_and_persists_public_type():
     result = _event_data(events[-2])["result"]
     assert result["payment_link_type"] == "gcash"
     assert result["payment_method"] == "gcash"
+
+
+def test_facade_twint_job_uses_native_swiss_request_and_persists_public_type():
+    store = ProgressStore()
+    captured_requests = []
+
+    def request_factory(**kwargs):
+        captured_requests.append(dict(kwargs))
+        return kwargs
+
+    facade = CompatibilityFacade(
+        request_factory=request_factory,
+        generate_core=lambda _request: {
+            "long_url": "https://payments.example.test/twint",
+            "provider_redirect_url": "https://payments.example.test/twint",
+            "payment_method_type": "twint",
+        },
+        set_progress=store.set_progress,
+        get_progress=store.get_progress,
+        log_event=lambda *_args, **_kwargs: None,
+    )
+
+    job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="twint"))
+    events = list(facade.iter_events(job_id))
+
+    assert captured_requests[0]["link_type"] == "swiss"
+    assert captured_requests[0]["billing_country"] == "CH"
+    assert captured_requests[0]["payment_locale"] == "de"
+    assert store.snapshots[job_id]["link_type"] == "swiss"
+    result = _event_data(events[-2])["result"]
+    assert result["payment_link_type"] == "twint"
+    assert result["payment_method"] == "twint"
+
+
+def test_facade_gopay_job_uses_native_id_approval_request_and_persists_result():
+    store = ProgressStore()
+    captured_requests = []
+
+    def request_factory(**kwargs):
+        captured_requests.append(dict(kwargs))
+        return kwargs
+
+    facade = CompatibilityFacade(
+        request_factory=request_factory,
+        generate_core=lambda _request: {
+            "long_url": "https://payments.example.test/gopay",
+            "provider_redirect_url": "https://payments.example.test/gopay",
+            "payment_method_type": "gopay",
+            "approval_result": "approved",
+            "submission_state": "requires_approval",
+        },
+        set_progress=store.set_progress,
+        get_progress=store.get_progress,
+        log_event=lambda *_args, **_kwargs: None,
+    )
+
+    job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="gopay"))
+    events = list(facade.iter_events(job_id))
+
+    assert captured_requests[0]["link_type"] == "gopay"
+    assert captured_requests[0]["billing_country"] == "ID"
+    assert captured_requests[0]["payment_locale"] == "id"
+    assert store.snapshots[job_id]["link_type"] == "gopay"
+    result = _event_data(events[-2])["result"]
+    assert result["long_url"] == "https://payments.example.test/gopay"
+    assert result["payment_link_type"] == "gopay"
+    assert result["payment_method"] == "gopay"
 
 
 def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result():

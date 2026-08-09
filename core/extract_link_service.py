@@ -47,13 +47,13 @@ def _int_setting(name: str, default: int, lower: int, upper: int) -> int:
     return max(lower, min(upper, value))
 
 
-SUPPORTED_LINK_TYPES = {"pix", "upi", "kakao_pay", "ideal", "gcash", "paypal"}
+SUPPORTED_LINK_TYPES = {"pix", "upi", "kakao_pay", "twint", "ideal", "gcash", "gopay", "paypal"}
 
 
 def _link_type(value: str | None = None) -> str:
     t = str(value or _runtime_setting("EXTRACT_LINK_TYPE", "pix") or "pix").strip().lower()
     if t not in SUPPORTED_LINK_TYPES:
-        raise ValueError("提链类型无效，仅支持 pix / upi / kakao_pay / ideal / gcash / paypal")
+        raise ValueError("提链类型无效，仅支持 pix / upi / kakao_pay / twint / ideal / gcash / gopay / paypal")
     return t
 
 

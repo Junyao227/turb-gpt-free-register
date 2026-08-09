@@ -3,6 +3,7 @@
 
   const PUBLIC_TYPE_ALIASES = {
     korea: "kakao_pay",
+    swiss: "twint",
   };
   const LEGACY_PROVIDER_BY_PATH = {
     "/qr": "pix",
@@ -12,6 +13,7 @@
     "/upi/result": "upi",
     "/in-qr": "upi",
     "/kr-qr": "kakao_pay",
+    "/ch-qr": "twint",
     "/nl-qr": "ideal",
     "/ph-qr": "gcash",
   };

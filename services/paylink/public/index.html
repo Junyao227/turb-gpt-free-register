@@ -832,8 +832,8 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell4" />
-    <script defer src="/assets/app-shell.js?v=20260809-shell4"></script>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell5" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell5"></script>
   </head>
   <body>
     <div class="page">
@@ -877,7 +877,7 @@
                     <select id="linkType">
                       <option value="pix" selected>巴西线路（BR / BRL）</option>
                       <option value="korea">韩国线路（KR / KRW）</option>
-                      <option value="swiss">瑞士线路（CH / CHF）</option>
+                      <option value="swiss">Twint（CH / CHF）</option>
                       <option value="upi">印度线路（IN / INR）</option>
                       <option value="ideal">荷兰 iDEAL（NL / EUR）</option>
                       <option value="gcash">菲律宾 GCash（PH / PHP）</option>
@@ -1155,15 +1155,15 @@
           statusText: "韩国 KakaoPay 支付页已生成",
         },
         swiss: {
-          title: "瑞士 Checkout 线路",
+          title: "Twint Checkout 线路",
           icon: "CH",
-          linkLabel: "瑞士线路（CH / CHF）",
+          linkLabel: "Twint（CH / CHF）",
           country: "CH",
           currency: "CHF",
           locale: "de",
           promoEnabled: true,
-          resultLabel: "瑞士 Checkout 短链",
-          statusText: "瑞士 checkout 短链已生成",
+          resultLabel: "Twint Checkout 短链",
+          statusText: "Twint checkout 短链已生成",
         },
         upi: {
           title: "印度 UPI 线路",
@@ -1241,13 +1241,16 @@
         return requested === "tasks" || window.location.hash === "#tasks" ? "tasks" : "generate";
       }
 
+      const PUBLIC_TYPE_BY_NATIVE = { korea: "kakao_pay", swiss: "twint" };
+      const NATIVE_TYPE_BY_PUBLIC = { kakao_pay: "korea", twint: "swiss" };
+
       function publicProviderType(nativeType) {
-        return nativeType === "korea" ? "kakao_pay" : nativeType;
+        return PUBLIC_TYPE_BY_NATIVE[nativeType] || nativeType;
       }
 
       function applyProviderFromUrl() {
         const requested = String(new URLSearchParams(window.location.search).get("provider") || "").trim().toLowerCase();
-        const nativeType = requested === "kakao_pay" ? "korea" : requested;
+        const nativeType = NATIVE_TYPE_BY_PUBLIC[requested] || requested;
         const option = Array.from($("linkType").options).find((item) => item.value === nativeType);
         if (option) $("linkType").value = nativeType;
       }
@@ -1668,7 +1671,7 @@
         if (!providerReady) return "";
         if (data.link_type === "pix") return "检测到未完成的 PIX 会话，请到 /qr 页面查看队列。";
         if (data.link_type === "korea") return "检测到韩国支付会话，请到 /kr-qr 页面查看队列。";
-        if (data.link_type === "swiss") return "检测到瑞士支付会话，请到 /ch-qr 页面查看队列。";
+        if (data.link_type === "swiss") return "检测到 Twint 支付会话，请到 /ch-qr 页面查看队列。";
         if (data.link_type === "upi") return "检测到印度 UPI 二维码会话，请到 /in-qr 页面查看队列。";
         if (data.link_type === "gcash") return "检测到菲律宾 GCash 支付会话，请到 /ph-qr 页面查看队列。";
         return "";
@@ -1676,7 +1679,7 @@
 
       function resolveQueueLabel(data) {
         if (data.link_type === "korea") return "韩国支付队列";
-        if (data.link_type === "swiss") return "瑞士支付队列";
+        if (data.link_type === "swiss") return "Twint 支付队列";
         if (data.link_type === "upi") return "印度 UPI 队列";
         if (data.link_type === "gcash") return "菲律宾 GCash 队列";
         return "PIX 二维码队列";

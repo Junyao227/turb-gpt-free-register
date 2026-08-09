@@ -31,8 +31,10 @@ PROVIDERS: dict[str, ProviderDefinition] = {
         "providers.kakao_pay",
         "/kr-qr",
     ),
+    "twint": ProviderDefinition("twint", "swiss", "Twint", "providers.twint", "/ch-qr"),
     "ideal": ProviderDefinition("ideal", "ideal", "iDEAL", "providers.ideal", "/nl-qr"),
     "gcash": ProviderDefinition("gcash", "gcash", "GCash", "providers.gcash", "/ph-qr"),
+    "gopay": ProviderDefinition("gopay", "gopay", "GoPay", "providers.gopay", "/?provider=gopay&view=tasks"),
     "paypal": ProviderDefinition("paypal", "paypal", "PayPal", "providers.paypal", "/?provider=paypal&view=tasks"),
 }
 

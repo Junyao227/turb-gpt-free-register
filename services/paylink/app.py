@@ -146,8 +146,10 @@ PROVIDER_PROXY_ENV_KEYS: dict[str, tuple[str, str]] = {
     "pix": ("OPENAI_PAY_PIX_PROXY", "OPENAI_PAY_PIX_PROXY_POOL"),
     "upi": ("OPENAI_PAY_INDIA_PROXY", "OPENAI_PAY_INDIA_PROXY_POOL"),
     "kakao_pay": ("OPENAI_PAY_KOREA_PROXY", "OPENAI_PAY_KOREA_PROXY_POOL"),
+    "twint": ("OPENAI_PAY_SWISS_PROXY", "OPENAI_PAY_SWISS_PROXY_POOL"),
     "ideal": ("OPENAI_PAY_IDEAL_PROXY", "OPENAI_PAY_IDEAL_PROXY_POOL"),
     "gcash": ("OPENAI_PAY_PH_PROXY", "OPENAI_PAY_PH_PROXY_POOL"),
+    "gopay": ("OPENAI_PAY_GOPAY_PROVIDER_PROXY", "OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL"),
     "paypal": ("OPENAI_PAY_PAYPAL_PROXY", "OPENAI_PAY_PAYPAL_PROXY_POOL"),
 }
 PROXY_ENV_RUNTIME_NAMES = {
@@ -157,6 +159,10 @@ PROXY_ENV_RUNTIME_NAMES = {
     "OPENAI_PAY_INDIA_PROXY_POOL": "INDIA_PROXY_POOL",
     "OPENAI_PAY_KOREA_PROXY": "KOREA_STAGE_PROXY",
     "OPENAI_PAY_KOREA_PROXY_POOL": "KOREA_PROXY_POOL",
+    "OPENAI_PAY_SWISS_PROXY": "SWISS_STAGE_PROXY",
+    "OPENAI_PAY_SWISS_PROXY_POOL": "SWISS_PROXY_POOL",
+    "OPENAI_PAY_GOPAY_PROVIDER_PROXY": "GOPAY_PROVIDER_STAGE_PROXY",
+    "OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL": "GOPAY_PROVIDER_PROXY_POOL",
     "OPENAI_PAY_IDEAL_PROXY": "IDEAL_STAGE_PROXY",
     "OPENAI_PAY_IDEAL_PROXY_POOL": "IDEAL_PROXY_POOL",
     "OPENAI_PAY_PH_PROXY": "PH_STAGE_PROXY",
@@ -1280,7 +1286,7 @@ def provider_generation_progress_text(link_type: str) -> str:
     if normalized == "korea":
         return "生成 KakaoPay 支付页"
     if normalized == "swiss":
-        return "生成 Swiss 支付页"
+        return "生成 Twint 支付页"
     if normalized == "upi":
         return "生成 India UPI 二维码"
     if normalized == "ideal":

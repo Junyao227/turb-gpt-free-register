@@ -59,9 +59,20 @@ def test_checkout_request_body_disables_initial_promo_for_pix():
 def test_provider_page_path_for_link_types():
     assert app.provider_page_path_for_link_type("korea") == "/kr-qr"
     assert app.provider_page_path_for_link_type("swiss") == "/ch-qr"
+    assert app.provider_page_path_for_link_type("twint") == "/ch-qr"
     assert app.provider_page_path_for_link_type("upi") == "/in-qr"
     assert app.provider_page_path_for_link_type("ideal") == "/nl-qr"
     assert app.provider_page_path_for_link_type("gcash") == "/ph-qr"
+
+
+def test_twint_queue_page_preserves_public_identity_and_uses_native_swiss_queue_type():
+    page = (app.PUBLIC_DIR / "ch-qr.html").read_text(encoding="utf-8")
+    queue_script = (app.PUBLIC_DIR / "assets" / "provider-qr.js").read_text(encoding="utf-8")
+
+    assert 'data-provider-page="twint"' in page
+    assert 'PROVIDER_PAGE === "swiss" || PROVIDER_PAGE === "twint"' in queue_script
+    assert 'if (PROVIDER_PAGE === "twint") return "Twint 支付队列";' in queue_script
+    assert 'if (PROVIDER_PAGE === "twint") return "Open Twint payment page";' in queue_script
     assert app.provider_page_path_for_link_type("pix") == "/qr"
 
 

@@ -171,7 +171,7 @@ def test_checkout_retries_network_proxy_error(monkeypatch):
     assert len(attempts) == 2
 
 
-def test_provider_stage_proxy_prefers_japan_pool_for_gopay(monkeypatch):
+def test_gopay_checkout_and_provider_stages_prefer_dedicated_japan_pool(monkeypatch):
     monkeypatch.setattr(
         app,
         "GOPAY_PROVIDER_PROXY_POOL",
@@ -186,8 +186,11 @@ def test_provider_stage_proxy_prefers_japan_pool_for_gopay(monkeypatch):
     )
     monkeypatch.setitem(app._proxy_cursor, "gopay", 0)
 
+    checkout_candidates = app.proxy_candidates_for_link_type("", "gopay")
     proxy = app.provider_stage_proxy(app.LongLinkRequest(link_type="gopay"))
 
+    assert checkout_candidates[0].endswith("sid-demo-t-5:fixture-pass@proxy.example.test:443")
+    assert "region-JP" in checkout_candidates[0]
     assert "region-JP" in proxy
 
 

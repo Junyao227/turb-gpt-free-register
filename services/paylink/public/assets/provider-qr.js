@@ -4,7 +4,7 @@ const PROVIDER_PAGE = document.body.dataset.providerPage || "generic";
 const LINK_TYPE =
   PROVIDER_PAGE === "korea"
     ? "korea"
-    : PROVIDER_PAGE === "swiss"
+    : PROVIDER_PAGE === "swiss" || PROVIDER_PAGE === "twint"
       ? "swiss"
       : PROVIDER_PAGE === "upi"
         ? "upi"
@@ -46,6 +46,7 @@ async function apiFetch(url, options = {}, scope = PAGE_SCOPE) {
 }
 
 function resolveTitle() {
+  if (PROVIDER_PAGE === "twint") return "Twint 支付队列";
   if (LINK_TYPE === "korea") return "韩国 KakaoPay 队列";
   if (LINK_TYPE === "swiss") return "瑞士支付队列";
   if (LINK_TYPE === "upi") return "OPLL-UPI · IN-QR";
@@ -56,6 +57,7 @@ function resolveTitle() {
 }
 
 function resolveOpenLabel() {
+  if (PROVIDER_PAGE === "twint") return "Open Twint payment page";
   if (LINK_TYPE === "korea") return "Open KakaoPay page";
   if (LINK_TYPE === "swiss") return "Open Swiss payment page";
   if (LINK_TYPE === "upi") return "Open UPI payment page";

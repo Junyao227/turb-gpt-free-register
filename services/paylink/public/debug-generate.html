@@ -61,8 +61,8 @@
       .hidden { display:none; }
       @media (max-width:900px) { .layout { grid-template-columns:1fr; } h1 { font-size:24px; } .page { width:min(100vw - 20px,1180px); padding-top:14px; } }
     </style>
-    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell4" />
-    <script defer src="/assets/app-shell.js?v=20260809-shell4"></script>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell5" />
+    <script defer src="/assets/app-shell.js?v=20260809-shell5"></script>
   </head>
   <body>
     <main class="page">
@@ -77,7 +77,7 @@
         <div class="layout">
           <aside class="box">
             <h2>参数</h2>
-            <div class="row"><label for="linkType">线路</label><select id="linkType"><option value="upi" selected>印度 UPI（IN / INR）</option><option value="gopay">印尼 GoPay（ID / IDR）</option><option value="gcash">菲律宾 GCash（PH / PHP）</option><option value="grabpay">菲律宾 GrabPay（PH / PHP）</option><option value="paypal">美国 PayPal（US / USD）</option><option value="korea">韩国 KakaoPay</option><option value="swiss">瑞士线路</option><option value="ideal">荷兰 iDEAL（NL / EUR）</option><option value="pix">巴西 PIX</option></select></div>
+            <div class="row"><label for="linkType">线路</label><select id="linkType"><option value="upi" selected>印度 UPI（IN / INR）</option><option value="gopay">印尼 GoPay（ID / IDR）</option><option value="gcash">菲律宾 GCash（PH / PHP）</option><option value="grabpay">菲律宾 GrabPay（PH / PHP）</option><option value="paypal">美国 PayPal（US / USD）</option><option value="korea">韩国 KakaoPay</option><option value="swiss">Twint（CH / CHF）</option><option value="ideal">荷兰 iDEAL（NL / EUR）</option><option value="pix">巴西 PIX</option></select></div>
             <div class="grid"><div class="row"><label for="country">国家</label><input id="country" value="IN" readonly /></div><div class="row"><label for="locale">语言</label><input id="locale" value="en" readonly /></div></div>
             <div class="switch-row"><label for="concurrentEnabled">并发调试</label><input id="concurrentEnabled" type="checkbox" /></div>
             <div class="grid"><div class="row"><label for="concurrencyCount">并发数</label><input id="concurrencyCount" type="number" min="1" max="8" value="3" disabled /></div><div class="row"><label for="totalCount">总数</label><input id="totalCount" type="number" min="1" max="50" value="3" disabled /></div></div>
@@ -138,8 +138,10 @@
       async function apiFetch(url, options = {}) { const response = await fetch(url, { cache:"no-store", ...options }); if (response.status === 401) { redirectToLogin(); throw new Error("登录已失效"); } return response; }
       function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = 0; }
       function stopLogPolling() { if (logPollTimer) clearInterval(logPollTimer); logPollTimer = 0; }
-      function publicProviderType(nativeType) { return nativeType === "korea" ? "kakao_pay" : nativeType; }
-      function applyProviderFromUrl() { const requested = String(new URLSearchParams(location.search).get("provider") || "").trim().toLowerCase(); const nativeType = requested === "kakao_pay" ? "korea" : requested; const option = Array.from($("linkType").options).find((item) => item.value === nativeType); if (option) $("linkType").value = nativeType; }
+      const PUBLIC_TYPE_BY_NATIVE = { korea: "kakao_pay", swiss: "twint" };
+      const NATIVE_TYPE_BY_PUBLIC = { kakao_pay: "korea", twint: "swiss" };
+      function publicProviderType(nativeType) { return PUBLIC_TYPE_BY_NATIVE[nativeType] || nativeType; }
+      function applyProviderFromUrl() { const requested = String(new URLSearchParams(location.search).get("provider") || "").trim().toLowerCase(); const nativeType = NATIVE_TYPE_BY_PUBLIC[requested] || requested; const option = Array.from($("linkType").options).find((item) => item.value === nativeType); if (option) $("linkType").value = nativeType; }
       function syncProviderToUrl() { const publicType = publicProviderType($("linkType").value); const url = new URL(location.href); url.searchParams.set("provider", publicType); history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`); window.dispatchEvent(new CustomEvent("paylink:provider-change", { detail: { publicType } })); }
       function applyLine() { const [country, locale] = LINE_MAP[$("linkType").value] || LINE_MAP.upi; $("country").value = country; $("locale").value = locale; }
       function walletLineNeedsProviderLink(linkType) { return ["gopay", "gcash", "grabpay"].includes(String(linkType || "").trim()); }

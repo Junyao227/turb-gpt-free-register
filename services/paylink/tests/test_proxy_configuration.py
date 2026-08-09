@@ -46,6 +46,43 @@ def test_proxy_config_view_maps_paypal_to_its_dedicated_settings(monkeypatch):
     assert "proxy.example.test" not in serialized
 
 
+def test_proxy_config_view_maps_twint_to_existing_swiss_settings(monkeypatch):
+    monkeypatch.setenv("OPENAI_PAY_SWISS_PROXY", FIXTURE_PROXY)
+    monkeypatch.setenv("OPENAI_PAY_SWISS_PROXY_POOL", FIXTURE_PROXY_TWO)
+
+    view = app.proxy_config_view("twint")
+    serialized = json.dumps(view)
+
+    assert view["native_type"] == "swiss"
+    assert view["fallback"]["env_key"] == "OPENAI_PAY_SWISS_PROXY"
+    assert view["pool"]["env_key"] == "OPENAI_PAY_SWISS_PROXY_POOL"
+    assert view["pool"]["count"] == 1
+    assert "fixture-user" not in serialized
+    assert "proxy.example.test" not in serialized
+
+
+def test_proxy_config_view_maps_gopay_to_its_approval_settings(monkeypatch):
+    monkeypatch.setenv("OPENAI_PAY_GOPAY_PROVIDER_PROXY", FIXTURE_PROXY)
+    monkeypatch.setenv("OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL", FIXTURE_PROXY_TWO)
+
+    view = app.proxy_config_view("gopay")
+    serialized = json.dumps(view)
+
+    assert view["native_type"] == "gopay"
+    assert view["fallback"]["env_key"] == "OPENAI_PAY_GOPAY_PROVIDER_PROXY"
+    assert view["pool"]["env_key"] == "OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL"
+    assert view["pool"]["count"] == 1
+    assert "fixture-user" not in serialized
+    assert "proxy.example.test" not in serialized
+
+
+def test_provider_proxy_runtime_mapping_covers_swiss_and_gopay_settings():
+    assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_SWISS_PROXY"] == "SWISS_STAGE_PROXY"
+    assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_SWISS_PROXY_POOL"] == "SWISS_PROXY_POOL"
+    assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_GOPAY_PROVIDER_PROXY"] == "GOPAY_PROVIDER_STAGE_PROXY"
+    assert app.PROXY_ENV_RUNTIME_NAMES["OPENAI_PAY_GOPAY_PROVIDER_PROXY_POOL"] == "GOPAY_PROVIDER_PROXY_POOL"
+
+
 def test_proxy_configuration_update_writes_atomically_and_updates_runtime(monkeypatch, tmp_path):
     env_path = tmp_path / ".env"
     env_path.write_text("UNRELATED_VALUE=keep\nOPENAI_PAY_PH_PROXY=old-value\n", encoding="utf-8")
