@@ -137,3 +137,37 @@ Added explicit US, Thailand, and Brazil PayPal Checkout profiles with regional p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 合并上游并保留本地扩展
+
+**Date**: 2026-09-13
+**Task**: 合并上游并保留本地扩展
+**Branch**: `main`
+
+### Summary
+
+合入 upstream/main@42ace02，语义解决 16 个文件的两阶段冲突，保留 CDK、邮箱池、Pay153 与 Paylink 支付功能；主项目 333 项和 Paylink 137 项测试通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c3ed81` | (see git log) |
+| `796127a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

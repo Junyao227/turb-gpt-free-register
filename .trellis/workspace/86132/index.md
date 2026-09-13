@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-08-09
+- **Total Sessions**: 5
+- **Last Active**: 2026-09-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~139 | Active |
+| `journal-1.md` | ~173 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-09-13 | 合并上游并保留本地扩展 | `3c3ed81`, `796127a` | `main` |
 | 4 | 2026-08-09 | PayPal regional paylink profiles | `8d7c4fa` | `main` |
 | 3 | 2026-08-09 | Add GrabPay provider | `8ab5afb` | `main` |
 | 2 | 2026-08-09 | GCash and PayPal Paylink providers | `9f2cad6` | `main` |
