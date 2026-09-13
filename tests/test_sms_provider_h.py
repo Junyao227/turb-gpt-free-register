@@ -43,7 +43,7 @@ class HSmsProviderTests(unittest.TestCase):
 
     def test_acquire_number_uses_h_take_reusable_phone(self):
         http = _Http([{"item": {"id": "hid-1", "phone": "2025550123"}, "reused": True, "duplicate": False}])
-        with patch.object(codex_config, "SMS_PROVIDER", "h"), patch.object(codex_config, "H_API_BASE", "http://localhost:8788"), patch.object(codex_config, "H_ADMIN_AUTH_CODE", "adm"), patch.object(codex_config, "SMS_SERVICE", "12345"), patch.object(codex_config, "SMS_COUNTRY", "us"), patch.object(codex_config, "H_PHONE_PREFIX", "1"), patch.object(codex_config, "H_PHONE_ACQUIRE_MODE", "reusable"):
+        with patch.object(codex_config, "SMS_PROVIDER", "h"), patch.object(codex_config, "H_API_BASE", "http://localhost:8788"), patch.object(codex_config, "H_ADMIN_AUTH_CODE", "adm"), patch.object(codex_config, "H_PROJECT_ID", "12345"), patch.object(codex_config, "H_COUNTRY", "us"), patch.object(codex_config, "H_PHONE_PREFIX", "1"), patch.object(codex_config, "H_PHONE_ACQUIRE_MODE", "reusable"):
             activation_id, phone = sms_provider.acquire_number(http=http)
 
         self.assertEqual(activation_id, "hid-1")
@@ -55,7 +55,7 @@ class HSmsProviderTests(unittest.TestCase):
 
     def test_acquire_number_uses_h_take_phone_when_mode_new(self):
         http = _Http([{"item": {"id": "hid-2", "phone": "2025550456"}, "reused": False, "duplicate": False}])
-        with patch.object(codex_config, "SMS_PROVIDER", "h"), patch.object(codex_config, "H_API_BASE", "http://localhost:8788"), patch.object(codex_config, "H_ADMIN_AUTH_CODE", "adm"), patch.object(codex_config, "SMS_SERVICE", "12345"), patch.object(codex_config, "SMS_COUNTRY", "us"), patch.object(codex_config, "H_PHONE_PREFIX", "1"), patch.object(codex_config, "H_PHONE_ACQUIRE_MODE", "new"):
+        with patch.object(codex_config, "SMS_PROVIDER", "h"), patch.object(codex_config, "H_API_BASE", "http://localhost:8788"), patch.object(codex_config, "H_ADMIN_AUTH_CODE", "adm"), patch.object(codex_config, "H_PROJECT_ID", "12345"), patch.object(codex_config, "H_COUNTRY", "us"), patch.object(codex_config, "H_PHONE_PREFIX", "1"), patch.object(codex_config, "H_PHONE_ACQUIRE_MODE", "new"):
             activation_id, phone = sms_provider.acquire_number(http=http)
 
         self.assertEqual(activation_id, "hid-2")

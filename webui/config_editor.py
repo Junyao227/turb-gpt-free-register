@@ -51,7 +51,11 @@ EDITABLE_FIELDS = [
     },
     {
         "key": "REGISTRATION_DRIVER", "file": "roxybrowser.py", "type": "str", "group": "注册方式",
-        "label": "注册驱动", "help": "默认推荐 roxy；protocol=纯协议，容易封号不建议；roxy=RoxyBrowser；cloak=CloakBrowser；browser_use=Browser Use Cloud+Playwright；skyvern=Skyvern Browser Sessions+Playwright",
+        "label": "注册驱动", "help": "默认推荐 roxy；protocol=纯协议；roxy=RoxyBrowser；cloak=CloakBrowser；ant_browser=Ant Browser 本地 Profile；browser_use=Browser Use Cloud+Playwright；skyvern=Skyvern Browser Sessions+Playwright",
+    },
+    {
+        "key": "AUTO_PLAN_CHECK_AFTER_REGISTER", "file": "register.py", "type": "bool", "group": "注册方式",
+        "label": "注册后自动查套餐", "help": "注册成功后自动入队查询套餐/Plus 资格；关闭后仅保存账号，不自动查套餐",
     },
     {
         "key": "AUTO_PLAN_CHECK_AFTER_REGISTER", "file": "register.py", "type": "bool", "group": "注册方式",
@@ -102,6 +106,45 @@ EDITABLE_FIELDS = [
     {
         "key": "CLOAK_KEEP_BROWSER_OPEN", "file": "cloakbrowser.py", "type": "bool", "group": "CloakBrowser",
         "label": "保留Cloak浏览器", "help": "调试时开启，任务结束后不自动关闭",
+    },
+
+    # ---- Ant Browser ----
+    {
+        "key": "ANT_BROWSER_API_BASE", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
+        "label": "Ant API 地址", "help": "Ant Browser LaunchServer 地址，默认 http://127.0.0.1:19876",
+    },
+    {
+        "key": "ANT_BROWSER_API_KEY", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
+        "label": "Ant API Key", "help": "可选；保存到 .env，不写回 config/*.py",
+        "storage": "env", "secret": True,
+    },
+    {
+        "key": "ANT_BROWSER_API_KEY_HEADER", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
+        "label": "Ant Key 请求头", "help": "默认 X-Ant-Api-Key；需与 Ant Browser Launch API 设置一致",
+    },
+    {
+        "key": "ANT_BROWSER_PROFILE_MODE", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
+        "label": "Ant Profile 模式", "help": "managed=每个注册任务自动创建、启动和清理 Profile；existing=使用下面指定的已有 Profile",
+    },
+    {
+        "key": "ANT_BROWSER_PROFILE_ID", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
+        "label": "Ant Profile ID", "help": "仅 existing 模式必填；managed 模式忽略此项并为每个任务创建独立 Profile",
+    },
+    {
+        "key": "ANT_BROWSER_START_TIMEOUT", "file": "ant_browser.py", "type": "int", "group": "Ant Browser",
+        "label": "Ant 启动超时", "help": "启动 Profile 和连接 Selenium 的最长秒数",
+    },
+    {
+        "key": "ANT_BROWSER_KEEP_BROWSER_OPEN", "file": "ant_browser.py", "type": "bool", "group": "Ant Browser",
+        "label": "保留 Ant 浏览器", "help": "开启后任务结束不停止或删除托管 Profile，便于调试；existing 模式的手动实例默认不会停止",
+    },
+    {
+        "key": "ANT_BROWSER_DELETE_MANAGED_PROFILE", "file": "ant_browser.py", "type": "bool", "group": "Ant Browser",
+        "label": "删除托管 Ant Profile", "help": "仅 managed 模式生效；关闭时任务结束仅停止实例并保留 Profile，默认开启",
+    },
+    {
+        "key": "ANT_BROWSER_START_URL", "file": "ant_browser.py", "type": "str", "group": "Ant Browser",
+        "label": "Ant 起始 URL", "help": "注册流程进入的页面，默认 ChatGPT 登录页",
     },
 
     # ---- Browser Use Cloud ----
@@ -261,6 +304,14 @@ EDITABLE_FIELDS = [
     {
         "key": "ROXY_CREATE_USE_PROXY_POOL", "file": "roxybrowser.py", "type": "bool", "group": "RoxyBrowser",
         "label": "创建环境使用代理池", "help": "创建 Roxy 环境时从配置页「代理池」随机取一个代理，写入 Roxy proxyInfo",
+    },
+    {
+        "key": "ROXY_CREATE_BUSY_MAX_WAIT", "file": "roxybrowser.py", "type": "int", "group": "RoxyBrowser",
+        "label": "创建忙等待上限", "help": "Roxy 返回“正在创建中，请稍等”时，最多等待重试多少秒；避免并发创建环境直接失败",
+    },
+    {
+        "key": "ROXY_CREATE_BUSY_RETRY_DELAY", "file": "roxybrowser.py", "type": "int", "group": "RoxyBrowser",
+        "label": "创建忙重试间隔", "help": "Roxy 创建环境正忙时，每隔多少秒重试一次；默认 3 秒",
     },
     {
         "key": "ROXY_PROXY_CHECK_CHANNEL", "file": "roxybrowser.py", "type": "str", "group": "RoxyBrowser",
@@ -589,6 +640,31 @@ EDITABLE_FIELDS = [
         "key": "EXTRACT_LINK_WORKERS", "file": "extract_link.py", "type": "int", "group": "提链",
         "label": "提链并发数", "help": "批量提链后台线程数，建议 1-4",
     },
+    # ---- 协议支付 / PAY.153 ----
+    {
+        "key": "PAY153_ENABLED", "file": "pay153.py", "type": "bool", "group": "协议支付",
+        "label": "启用 PAY.153", "help": "开启后 GPT Registrator 可通过本地 API 调用 PAY.153 协议支付服务",
+    },
+    {
+        "key": "PAY153_API_BASE", "file": "pay153.py", "type": "str", "group": "协议支付",
+        "label": "PAY.153 服务地址", "help": "填写 PAY.153 子项目地址，例如 http://127.0.0.1:8080；系统会自动补齐 /api",
+    },
+    {
+        "key": "PAY153_REQUEST_TIMEOUT", "file": "pay153.py", "type": "int", "group": "协议支付",
+        "label": "请求超时(秒)", "help": "Registrator 调用 PAY.153 单次 HTTP 请求超时，建议 15-60",
+    },
+    {
+        "key": "PAY153_DEFAULT_COUNTRY", "file": "pay153.py", "type": "str", "group": "协议支付",
+        "label": "默认账单国家", "help": "创建协议支付任务时未指定 country 时使用，例如 BR / US / TH",
+    },
+    {
+        "key": "PAY153_DEFAULT_BUYER_MODE", "file": "pay153.py", "type": "str", "group": "协议支付",
+        "label": "默认 Buyer 模式", "help": "默认 identity_elevation；也可按 PAY.153 支持的模式填写",
+    },
+    {
+        "key": "PAY153_DEFAULT_AGREEMENT_ONLY", "file": "pay153.py", "type": "bool", "group": "协议支付",
+        "label": "仅协议授权", "help": "默认关闭，保持 PAY.153 当前 UI 的协议支付行为；开启后创建任务默认传 agreement_only=true",
+    },
     # ---- Codex 配置 ----
     {
         "key": "SUB2API_AUTO_EXPORT", "file": "sub2api.py", "type": "bool", "group": "Codex",
@@ -636,6 +712,19 @@ EDITABLE_FIELDS = [
     {
         "key": "CPA_REQUEST_TIMEOUT", "file": "codex.py", "type": "int", "group": "Codex",
         "label": "CPA 超时(秒)", "help": "请求 CPA 管理接口的超时时间",
+    },
+    {
+        "key": "CDK_MGMT_MANAGEMENT_URL", "file": "codex.py", "type": "str", "group": "Codex",
+        "label": "CDK 管理端地址", "help": "例如 https://chong.example.com；程序会取 origin 调用 /api/management/import-cpa",
+    },
+    {
+        "key": "CDK_MGMT_MANAGEMENT_KEY", "file": "codex.py", "type": "str", "group": "Codex",
+        "label": "CDK 管理端密钥", "help": "保存在 .env（CDK_MGMT_MANAGEMENT_KEY），用于批量创建 CDK 记录和上传 CPA 文件",
+        "storage": "env", "secret": True,
+    },
+    {
+        "key": "CDK_MGMT_REQUEST_TIMEOUT", "file": "codex.py", "type": "int", "group": "Codex",
+        "label": "CDK 管理端超时(秒)", "help": "上传 CPA 到 CDK 管理端的请求超时时间",
     },
     {
         "key": "CPA_SAVE_CALLBACK_RECEIPT", "file": "codex.py", "type": "bool", "group": "Codex",

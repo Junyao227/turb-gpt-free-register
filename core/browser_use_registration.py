@@ -15,6 +15,7 @@ import random
 import threading
 import string
 import time
+import warnings
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
@@ -309,31 +310,38 @@ def _build_playwright_stealth(provider_prefix: str, *, label: str):
         logger.warning("[%s] 缺少 playwright-stealth；请执行: uv pip install playwright-stealth --python .venv/bin/python", label)
         return None
 
-    return Stealth(
-        # 默认增强但不重写云端原生画像。
-        navigator_user_agent=False,
-        navigator_user_agent_data=False,
-        navigator_platform=False,
-        sec_ch_ua=False,
-        webgl_vendor=False,
-        # 增强自动化特征修正。
-        chrome_runtime=True,
-        chrome_app=True,
-        chrome_csi=True,
-        chrome_load_times=True,
-        hairline=True,
-        iframe_content_window=True,
-        media_codecs=True,
-        navigator_hardware_concurrency=True,
-        navigator_languages=True,
-        navigator_permissions=True,
-        navigator_plugins=True,
-        navigator_vendor=True,
-        navigator_webdriver=True,
-        error_prototype=True,
-        
-        init_scripts_only=True,
-    )
+    # playwright-stealth 2.x gives disabled options non-null default overrides
+    # and consequently warns even though those overrides are never applied.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"navigator_(languages|platform) is False, but an override .* was provided.*",
+            category=UserWarning,
+        )
+        return Stealth(
+            # 默认增强但不重写云端原生画像。
+            navigator_user_agent=False,
+            navigator_user_agent_data=False,
+            navigator_platform=False,
+            sec_ch_ua=False,
+            webgl_vendor=False,
+            # 增强自动化特征修正。
+            chrome_runtime=True,
+            chrome_app=True,
+            chrome_csi=True,
+            chrome_load_times=True,
+            hairline=True,
+            iframe_content_window=True,
+            media_codecs=True,
+            navigator_hardware_concurrency=True,
+            navigator_languages=False,
+            navigator_permissions=True,
+            navigator_plugins=True,
+            navigator_vendor=True,
+            navigator_webdriver=True,
+            error_prototype=True,
+            init_scripts_only=True,
+        )
 
 
 def _apply_cloud_browser_automation_mask(context, page, *, label: str, provider_prefix: str = "browser_use", proxy_country_code: str | None = None) -> dict:
@@ -738,6 +746,7 @@ def _submit_email_step_pw(page, email: str) -> bool:
             return `${own} ${desc}`.toLowerCase();
           };
           const formId = form.getAttribute('id') || '';
+          const all = [...document.querySelectorAll('button,input[type="submit"]')];
           const scoped = [
             ...form.querySelectorAll('button,input[type="submit"]'),
             ...(formId ? [...document.querySelectorAll(`button[form="${CSS.escape(formId)}"],input[type="submit"][form="${CSS.escape(formId)}"]`)] : [])
@@ -755,45 +764,20 @@ def _submit_email_step_pw(page, email: str) -> bool:
               const primary = (el.tagName === 'BUTTON' || el.tagName === 'INPUT') && type === 'submit'
                 && (/\bbtn-primary\b/.test(cls) || /\b_primary_/.test(cls) || /\bw-full\b/.test(cls));
               const score = (primary ? 1000 : 0) + (type === 'submit' ? 120 : 0) - distance;
-              return {el, attrs, hasLogo, bad: bad.test(attrs), belowInput, distance, primary, score, type};
+              return {el, idx: all.indexOf(el), attrs, hasLogo, bad: bad.test(attrs), belowInput, distance, primary, score, type};
             })
             .filter(x => visible(x.el) && !x.bad && !x.hasLogo && x.belowInput)
             .sort((a,b) => b.score - a.score || a.distance - b.distance);
-          input.scrollIntoView({block:'center', inline:'nearest'});
-          input.focus();
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) setter.call(input, value); else input.value = value;
-          try { input.dispatchEvent(new InputEvent('beforeinput', {bubbles:true, cancelable:true, inputType:'insertText', data:value})); } catch (_) {}
-          try { input.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:value})); } catch (_) {
-            input.dispatchEvent(new Event('input', {bubbles:true}));
-          }
-          input.dispatchEvent(new Event('change', {bubbles:true}));
-          input.dispatchEvent(new FocusEvent('blur', {bubbles:true}));
-          input.blur();
-          const submit = candidates[0] ? candidates[0].el : null;
-          if (submit) {
-            submit.scrollIntoView({block:'center', inline:'center'});
-            try {
-              submit.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true, cancelable:true, view:window}));
-              submit.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
-              submit.dispatchEvent(new MouseEvent('mouseup', {bubbles:true, cancelable:true, view:window}));
-              submit.click();
-            } catch (_) {
-              if (form && typeof form.requestSubmit === 'function') form.requestSubmit(submit);
-              else if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
-              else form.submit();
-            }
-            return {ok:true, value, reason:submit.tagName === 'BUTTON' ? 'button_click' : 'submit_click', attrs:candidates[0].attrs.slice(0,180)};
-          }
-          if (form && typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-            return {ok:true, value, reason:'form_requestSubmit', attrs:''};
-          }
-          form.submit();
-          return {ok:true, value, reason:'form_submit', attrs:''};
+          if (!candidates.length) return {ok:false, reason:'missing_safe_submit', value, buttons: scoped.length};
+          const best = candidates[0];
+          best.el.scrollIntoView({block:'center', inline:'center'});
+          return {ok:true, idx:best.idx, value, reason:best.primary ? 'primary_submit' : 'safe_submit', attrs:best.attrs.slice(0,180)};
         }
         """, email) or {}
         if isinstance(result, dict) and result.get("ok"):
+            idx = int(result.get("idx") or 0)
+            loc = page.locator('button,input[type="submit"]').nth(idx)
+            _human_click_locator(loc, timeout=5000)
             logger.info("[BrowserUse] 邮箱表单安全提交：%s", result)
             _human_pause(0.8, 1.4)
             _assert_not_external_idp(page, "提交邮箱后")
@@ -2880,6 +2864,7 @@ def run_browser_use_registration(
                     "network_traffic": network_traffic,
                 },
             )
+            _post_register_dwell(page, context, provider_prefix=provider_prefix, email=email)
             _t_all.done("success")
             return {
                 "success": True,

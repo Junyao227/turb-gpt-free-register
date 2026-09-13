@@ -61,6 +61,32 @@ _DEFAULT_ACCOUNTS_JSON = _ACCOUNTS_JSON
 _DEFAULT_OUTLOOK_JSON = _OUTLOOK_JSON
 _DEFAULT_JOBS_JSON = _JOBS_JSON
 _SQLITE_READY_PATH: Path | None = None
+_VIEWER_DEBOUNCE_SECONDS = 3.0
+_VIEWER_REFRESH_LOCK = threading.Lock()
+_VIEWER_REFRESH_TIMER: threading.Timer | None = None
+_VIEWER_REFRESH_REASON = ""
+_ACTIVE_EMAIL_JOB_STATUSES = {"pending", "running", "stopping"}
+_EXTRACT_LINK_STATE_KEYS = (
+    "extract_link_status",
+    "extract_link_ok",
+    "extract_link_trigger",
+    "extract_link_type",
+    "extract_link_queued_at",
+    "extract_link_started_at",
+    "extract_link_completed_at",
+    "extract_link_checked_at",
+    "extract_link_error",
+    "extract_link_message",
+    "extract_link_job_id",
+    "extract_link_long_url",
+    "extract_link_copy_paste",
+    "extract_link_image_url_png",
+    "extract_link_image_url_svg",
+    "extract_link_payment_method",
+    "extract_link_payment_link_type",
+    "extract_link_expires_at",
+    "extract_link_result_json",
+)
 
 
 def _now() -> str:
@@ -636,12 +662,395 @@ def _registered_email_line(row: dict) -> str:
     return row.get("original_email_line") or row.get("email") or ""
 
 
+def _sync_outlook_txt(rows: list[dict]) -> None:
+    available_rows = [r for r in rows if r.get("status") == "available"]
+    lines = [_outlook_line(r) for r in sorted(available_rows, key=lambda x: int(x.get("id") or 0))]
+    _OUTLOOK_TXT.write_text(("\n".join(lines) + ("\n" if lines else "")), encoding="utf-8")
+
+
+def _sync_generic_api_email_txt(rows: list[dict]) -> None:
+    available_rows = [r for r in rows if r.get("status") == "available"]
+    lines = [_generic_api_email_line(r) for r in sorted(available_rows, key=lambda x: int(x.get("id") or 0))]
+    _GENERIC_API_EMAIL_TXT.write_text(("\n".join(lines) + ("\n" if lines else "")), encoding="utf-8")
+
+
+def _sync_accounts_txt(rows: list[dict]) -> None:
+    lines = [_registered_email_line(r) for r in sorted(rows, key=lambda x: int(x.get("id") or 0))]
+    _ACCOUNTS_TXT.write_text(("\n".join(lines) + ("\n" if lines else "")), encoding="utf-8")
+
+
+def _sync_tokens_txt(rows: list[dict]) -> None:
+    tokens = [
+        r.get("access_token") or ""
+        for r in sorted(rows, key=lambda x: int(x.get("id") or 0))
+        if r.get("access_token")
+    ]
+    _TOKENS_TXT.write_text(("\n".join(tokens) + ("\n" if tokens else "")), encoding="utf-8")
+
+
+def _viewer_snapshot(outlook_rows: list[dict], account_rows: list[dict]) -> dict:
+    account_by_email = {
+        (a.get("email") or "").lower(): a
+        for a in account_rows
+    }
+    return {
+        "generated_at": _now(),
+        "accounts": [
+            _decorate_account(r)
+            for r in sorted(account_rows, key=lambda x: int(x.get("id") or 0), reverse=True)
+        ],
+        "outlook": [
+            _decorate_outlook(r, account_by_email)
+            for r in sorted(outlook_rows, key=lambda x: int(x.get("id") or 0), reverse=True)
+        ],
+        "summary": {
+            "accounts": len(account_rows),
+            "outlook_total": len(outlook_rows),
+            "outlook_available": sum(1 for r in outlook_rows if r.get("status") == "available"),
+            "outlook_used": sum(1 for r in outlook_rows if r.get("status") == "used"),
+            "outlook_failed": sum(1 for r in outlook_rows if r.get("status") == "failed"),
+        },
+    }
+
+
+def _render_static_viewer(outlook_rows: list[dict] | None = None, account_rows: list[dict] | None = None) -> Path:
+    """生成可直接双击打开的静态账号查看页。"""
+    outlook_rows = _load_outlook() if outlook_rows is None else outlook_rows
+    account_rows = _load_accounts() if account_rows is None else account_rows
+    snapshot = _viewer_snapshot(outlook_rows, account_rows)
+    data_json = json.dumps(snapshot, ensure_ascii=False).replace("</", "<\\/")
+    title = escape(f"账号查看器 - {snapshot['generated_at']}")
+    html_text = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    :root {{
+      --bg: #eef3f8;
+      --surface: #ffffff;
+      --soft: #f7f9fc;
+      --text: #172033;
+      --muted: #667085;
+      --line: #d9e2ec;
+      --blue: #2563eb;
+      --green: #16803c;
+      --red: #c2413a;
+      --amber: #b7791f;
+    }}
+    body {{
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
+    header {{
+      padding: 22px 28px;
+      background: #101827;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }}
+    h1, h2, p {{ margin: 0; }}
+    h1 {{ font-size: 28px; }}
+    .meta {{ margin-top: 6px; color: #b8c7d9; font-size: 13px; }}
+    .stats {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+    .stat {{
+      min-width: 116px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 8px;
+      background: rgba(255,255,255,.08);
+    }}
+    .stat span {{ display: block; color: #b8c7d9; font-size: 12px; }}
+    .stat strong {{ display: block; margin-top: 4px; font-size: 18px; }}
+    main {{ width: min(1500px, calc(100vw - 32px)); margin: 16px auto 30px; display: grid; gap: 16px; }}
+    .toolbar, section {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 8px 22px rgba(15,23,42,.06);
+    }}
+    .toolbar {{ padding: 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }}
+    .search {{ min-width: min(520px, 100%); flex: 1; }}
+    input {{
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 12px;
+      font: inherit;
+    }}
+    .buttons {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    button {{
+      min-height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      padding: 0 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    button:hover {{ background: var(--soft); }}
+    button.primary {{ border-color: var(--blue); background: var(--blue); color: #fff; }}
+    button.good {{ border-color: #2f855a; background: #edf8f1; color: #166534; }}
+    button:disabled {{ color: #98a2b3; cursor: not-allowed; background: #f2f4f7; }}
+    .head {{ padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--soft); }}
+    .head p {{ margin-top: 4px; color: var(--muted); font-size: 12px; }}
+    .table-wrap {{ overflow: auto; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+    th, td {{ padding: 10px 12px; border-bottom: 1px solid #edf1f5; text-align: left; white-space: nowrap; vertical-align: middle; }}
+    th {{ position: sticky; top: 0; background: #fbfcfe; color: #475467; z-index: 1; font-size: 12px; }}
+    tr:hover td {{ background: #fbfdff; }}
+    .main-cell {{ font-weight: 700; }}
+    .sub-cell {{ margin-top: 3px; color: var(--muted); font-size: 12px; }}
+    .mono {{ font-family: ui-monospace, "JetBrains Mono", Consolas, monospace; font-size: 12px; }}
+    .muted {{ color: var(--muted); }}
+    .pill {{ display: inline-flex; min-width: 48px; justify-content: center; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }}
+    .status-available {{ color: var(--blue); background: #eef4ff; }}
+    .status-used {{ color: #475467; background: #f2f4f7; }}
+    .status-failed {{ color: var(--red); background: #fff0ef; }}
+    .actions {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    #toast {{
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #101827;
+      color: #fff;
+      box-shadow: 0 14px 30px rgba(15,23,42,.24);
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }}
+    #toast.show {{ opacity: 1; transform: translateY(0); }}
+    @media (max-width: 820px) {{
+      header {{ align-items: flex-start; }}
+      .stats {{ width: 100%; }}
+      .stat {{ flex: 1; }}
+    }}
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>账号查看器</h1>
+    <p class="meta">静态快照，无需启动 Web Server。生成时间：<span id="generated"></span></p>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>已完成</span><strong id="statAccounts">0</strong></div>
+    <div class="stat"><span>邮箱总数</span><strong id="statOutlook">0</strong></div>
+    <div class="stat"><span>可用邮箱</span><strong id="statAvailable">0</strong></div>
+  </div>
+</header>
+<main>
+  <div class="toolbar">
+    <div class="search"><input id="q" placeholder="搜索邮箱、token、clientId、状态"></div>
+    <div class="buttons">
+      <button class="primary" id="copyAllTokens">复制全部 Token</button>
+      <button class="good" id="copyAllLines">复制全部整行</button>
+      <button id="copyAllEmails">复制全部邮箱素材</button>
+    </div>
+  </div>
+  <section>
+    <div class="head">
+      <h2>已完成账号</h2>
+      <p>整行格式：邮箱----密码----clientId----邮箱刷新令牌----accessToken----totpSecret（如有）</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>邮箱</th><th>来源</th><th>Token</th><th>备注</th><th>2FA</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody id="accountsBody"></tbody>
+      </table>
+    </div>
+  </section>
+  <section>
+    <div class="head">
+      <h2>邮箱素材库</h2>
+      <p>原始格式：邮箱----密码----clientId----邮箱刷新令牌；注册完成后可直接复制对应 Token 或整行。</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>邮箱</th><th>状态</th><th>Token</th><th>导入时间</th><th>已用时间</th><th>操作</th></tr></thead>
+        <tbody id="outlookBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script id="snapshot" type="application/json">{data_json}</script>
+<script>
+const SNAPSHOT = JSON.parse(document.getElementById('snapshot').textContent);
+const $ = (s) => document.querySelector(s);
+let copySeq = 0;
+const copyStore = new Map();
+
+function fmt(v) {{ return v == null || v === '' ? '-' : String(v); }}
+function esc(v) {{
+  return fmt(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}}
+function short(v, n = 34) {{
+  const s = v || '';
+  return s.length > n ? `${{s.slice(0, n)}}...` : s;
+}}
+function copyId(v) {{
+  if (!v) return '';
+  const id = `c${{++copySeq}}`;
+  copyStore.set(id, v);
+  return id;
+}}
+function btn(label, value, cls = '') {{
+  const id = copyId(value);
+  return `<button class="${{cls}}" data-copy-id="${{id}}" ${{id ? '' : 'disabled'}}>${{label}}</button>`;
+}}
+function pill(status) {{
+  const map = {{ available: '可用', used: '已用', failed: '失败' }};
+  const label = map[status] || status || '-';
+  return `<span class="pill status-${{esc(status)}}">${{esc(label)}}</span>`;
+}}
+function showToast(text) {{
+  const toast = $('#toast');
+  toast.textContent = text;
+  toast.classList.add('show');
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove('show'), 1400);
+}}
+async function copyText(text) {{
+  if (!text) return;
+  if (navigator.clipboard && window.isSecureContext) {{
+    await navigator.clipboard.writeText(text);
+  }} else {{
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+  }}
+  showToast('已复制');
+}}
+function haystack(row) {{
+  return Object.values(row).join('\\n').toLowerCase();
+}}
+function render() {{
+  copyStore.clear();
+  copySeq = 0;
+  const q = $('#q').value.trim().toLowerCase();
+  const accounts = SNAPSHOT.accounts.filter((r) => !q || haystack(r).includes(q));
+  const outlook = SNAPSHOT.outlook.filter((r) => !q || haystack(r).includes(q));
+  $('#generated').textContent = SNAPSHOT.generated_at;
+  $('#statAccounts').textContent = SNAPSHOT.summary.accounts;
+  $('#statOutlook').textContent = SNAPSHOT.summary.outlook_total;
+  $('#statAvailable').textContent = SNAPSHOT.summary.outlook_available;
+  $('#accountsBody').innerHTML = accounts.map((r) => `
+    <tr>
+      <td class="muted">#${{esc(r.id)}}</td>
+      <td><div class="main-cell">${{esc(r.email)}}</div><div class="sub-cell">${{esc(r.user_name || '-')}}</div></td>
+      <td>${{esc(r.email_source || '-')}}</td>
+      <td><span class="mono">${{esc(short(r.access_token || '', 42))}}</span></td>
+      <td title="${{esc(r.note || '')}}">${{r.note ? esc(short(r.note, 60)) : '<span class="muted">-</span>'}}</td>
+      <td>${{r.totp_secret ? '已启用' : '<span class="muted">未启用</span>'}}</td>
+      <td class="muted">${{esc(r.created_at || '-')}}</td>
+      <td class="actions">${{btn('复制Token', r.access_token, 'primary')}} ${{btn('复制整行', r.copy_line, 'good')}}</td>
+    </tr>`).join('');
+  $('#outlookBody').innerHTML = outlook.map((r) => `
+    <tr>
+      <td><div class="main-cell">${{esc(r.email)}}</div><div class="sub-cell mono">${{esc(short(r.copy_line, 76))}}</div></td>
+      <td>${{pill(r.status)}}</td>
+      <td><span class="mono">${{esc(short(r.access_token || '', 36) || '未生成')}}</span></td>
+      <td class="muted">${{esc(r.imported_at || r.created_at || '-')}}</td>
+      <td class="muted">${{esc(r.used_at || '-')}}</td>
+      <td class="actions">${{btn('复制邮箱', r.copy_line)}} ${{btn('复制Token', r.access_token, 'primary')}} ${{btn('复制整行', r.account_copy_line, 'good')}}</td>
+    </tr>`).join('');
+}}
+document.addEventListener('click', (e) => {{
+  const target = e.target.closest('[data-copy-id]');
+  if (!target) return;
+  copyText(copyStore.get(target.dataset.copyId));
+}});
+$('#q').addEventListener('input', render);
+$('#copyAllTokens').addEventListener('click', () => copyText(SNAPSHOT.accounts.map((r) => r.access_token).filter(Boolean).join('\\n')));
+$('#copyAllLines').addEventListener('click', () => copyText(SNAPSHOT.accounts.map((r) => r.copy_line).filter(Boolean).join('\\n')));
+$('#copyAllEmails').addEventListener('click', () => copyText(SNAPSHOT.outlook.map((r) => r.copy_line).filter(Boolean).join('\\n')));
+render();
+</script>
+</body>
+</html>
+"""
+    tmp = _VIEWER_HTML.with_suffix(".html.tmp")
+    tmp.write_text(html_text, encoding="utf-8")
+    try:
+        tmp.replace(_VIEWER_HTML)
+        return _VIEWER_HTML
+    except PermissionError:
+        # Windows 下如果目标 HTML 正被浏览器或编辑器短暂占用，原子替换可能失败。
+        # 先尝试直接覆盖；仍失败时写一个时间戳快照，避免注册流程被查看页刷新阻断。
+        try:
+            _VIEWER_HTML.write_text(html_text, encoding="utf-8")
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            return _VIEWER_HTML
+        except PermissionError:
+            fallback = _DATA_DIR / f"accounts_viewer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            fallback.write_text(html_text, encoding="utf-8")
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            return fallback
+
+
+def _run_debounced_static_viewer_refresh() -> None:
+    """后台刷新静态查看页，避免阻塞账号与邮箱池的高频写入。"""
+    global _VIEWER_REFRESH_TIMER, _VIEWER_REFRESH_REASON
+    with _VIEWER_REFRESH_LOCK:
+        _VIEWER_REFRESH_TIMER = None
+        _VIEWER_REFRESH_REASON = ""
+    try:
+        with _LOCK:
+            _render_static_viewer(
+                outlook_rows=_load_outlook(),
+                account_rows=_load_accounts(),
+            )
+    except Exception:
+        # 静态查看页只是旁路产物，失败不能影响注册、查活或账号状态保存。
+        import logging
+
+        logging.getLogger(__name__).exception("后台刷新 accounts_viewer.html 失败")
+
+
+def _schedule_static_viewer_refresh(reason: str = "") -> None:
+    """合并短时间内的多次保存，只在最后一次保存后刷新静态查看页。"""
+    global _VIEWER_REFRESH_TIMER, _VIEWER_REFRESH_REASON
+    with _VIEWER_REFRESH_LOCK:
+        _VIEWER_REFRESH_REASON = reason or _VIEWER_REFRESH_REASON
+        if _VIEWER_REFRESH_TIMER is not None:
+            _VIEWER_REFRESH_TIMER.cancel()
+        timer = threading.Timer(_VIEWER_DEBOUNCE_SECONDS, _run_debounced_static_viewer_refresh)
+        timer.daemon = True
+        _VIEWER_REFRESH_TIMER = timer
+        timer.start()
+
+
 def _load_outlook() -> list[dict]:
     return _load_collection("outlook")
 
 
 def _save_outlook(rows: list[dict]) -> None:
     _save_collection("outlook", rows)
+    _sync_outlook_txt(rows)
+    _schedule_static_viewer_refresh("save_outlook")
 
 
 def _load_generic_api_emails() -> list[dict]:
@@ -672,6 +1081,9 @@ def _save_accounts(rows: list[dict]) -> None:
     for row in rows:
         row["copy_line"] = _account_line(row)
     _save_collection("accounts", rows)
+    _sync_accounts_txt(rows)
+    _sync_tokens_txt(rows)
+    _schedule_static_viewer_refresh("save_accounts")
 
 
 def _load_jobs() -> list[dict]:
@@ -685,6 +1097,31 @@ def _save_jobs(rows: list[dict]) -> None:
 def _find_by_email(rows: list[dict], email: str) -> dict | None:
     target = (email or "").lower()
     return next((r for r in rows if (r.get("email") or "").lower() == target), None)
+
+
+def _active_job_email_set(rows: list[dict], *, exclude_job_id: int | None = None) -> set[str]:
+    out: set[str] = set()
+    exclude = int(exclude_job_id or 0)
+    for row in rows:
+        if row.get("status") not in _ACTIVE_EMAIL_JOB_STATUSES:
+            continue
+        try:
+            row_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            row_id = 0
+        if exclude and row_id == exclude:
+            continue
+        email = str(row.get("email") or "").strip().lower()
+        if email:
+            out.add(email)
+    return out
+
+
+def _has_active_job_email(email: str, *, exclude_job_id: int | None = None) -> bool:
+    target = str(email or "").strip().lower()
+    if not target:
+        return False
+    return target in _active_job_email_set(_load_jobs(), exclude_job_id=exclude_job_id)
 
 
 def _decorate_account(row: dict) -> dict:
@@ -1680,6 +2117,76 @@ def update_account_extract(acc_id: int, result: dict | None = None) -> bool:
         return True
 
 
+def _clear_account_extract_row(row: dict, now: str | None = None) -> None:
+    now = now or _now()
+    for key in _EXTRACT_LINK_STATE_KEYS:
+        row.pop(key, None)
+    row["updated_at"] = now
+
+
+def clear_account_extract(acc_id: int) -> str:
+    """清空账号提链状态和结果；运行中的提链任务不允许清空。"""
+    with _LOCK:
+        accounts = _load_accounts()
+        row = next((r for r in accounts if int(r.get("id") or 0) == int(acc_id)), None)
+        if row is None:
+            return "missing"
+        if row.get("extract_link_status") in {"queued", "running"}:
+            return "busy"
+        _clear_account_extract_row(row)
+        _save_accounts(accounts)
+        return "cleared"
+
+
+def clear_accounts_extract(account_ids: list[int] | None) -> tuple[list[dict], list[dict]]:
+    """批量清空账号提链状态和结果；跳过不存在或运行中的账号。"""
+    cleared: list[dict] = []
+    skipped: list[dict] = []
+    requested: list[int] = []
+    seen: set[int] = set()
+
+    for raw in account_ids or []:
+        try:
+            acc_id = int(raw)
+        except Exception:
+            skipped.append({"id": raw, "reason": "ID 非法"})
+            continue
+        if acc_id in seen:
+            continue
+        seen.add(acc_id)
+        requested.append(acc_id)
+
+    if not requested and not skipped:
+        return cleared, skipped
+
+    with _LOCK:
+        accounts = _load_accounts()
+        account_by_id: dict[int, dict] = {}
+        for row in accounts:
+            try:
+                account_by_id[int(row.get("id") or 0)] = row
+            except Exception:
+                continue
+
+        now = _now()
+        changed = False
+        for acc_id in requested:
+            row = account_by_id.get(acc_id)
+            if row is None:
+                skipped.append({"id": acc_id, "reason": "账号不存在"})
+                continue
+            if row.get("extract_link_status") in {"queued", "running"}:
+                skipped.append({"id": acc_id, "email": row.get("email"), "reason": "提链任务正在运行"})
+                continue
+            _clear_account_extract_row(row, now)
+            cleared.append({"id": acc_id, "email": row.get("email")})
+            changed = True
+
+        if changed:
+            _save_accounts(accounts)
+    return cleared, skipped
+
+
 def recover_interrupted_extract_links() -> int:
     """服务启动时恢复上次进程中断的提链状态。"""
     with _LOCK:
@@ -1738,7 +2245,7 @@ def _matches_codex_status_filter(row: dict, codex_filter: str | None) -> bool:
     if codex_filter in {"all", "*"}:
         return True
     if codex_filter == "deactivated":
-        return live_status == "deactivated"
+        return live_status == "deactivated" or status == "deactivated"
     return status == codex_filter
 
 
@@ -2132,6 +2639,9 @@ def update_account_liveness(acc_id: int, result: dict | None = None) -> bool:
                 row["plan_type"] = account.get("planType")
             if session.get("expires"):
                 row["expires_at"] = session.get("expires")
+            if result.get("device_id"):
+                row["device_id"] = result.get("device_id")
+            row["live_check_device_id"] = result.get("device_id") or row.get("live_check_device_id")
             row["live_check_proxy_used"] = result.get("proxy_used") or row.get("live_check_proxy_used")
             row["live_check_fingerprint_text"] = result.get("fingerprint_text") or row.get("live_check_fingerprint_text")
             if result.get("fingerprint"):
@@ -2647,8 +3157,13 @@ def import_registered_email_accounts(records: list[dict], source: str | None) ->
 def claim_next_outlook() -> dict | None:
     """原子领取一个可用 Outlook 账号并标记为 used。"""
     with _LOCK:
+        active_emails = _active_job_email_set(_load_jobs())
         rows = sorted(_load_outlook(), key=lambda x: int(x.get("id") or 0))
-        row = next((r for r in rows if r.get("status") == "available"), None)
+        row = next((
+            r for r in rows
+            if r.get("status") == "available"
+            and str(r.get("email") or "").strip().lower() not in active_emails
+        ), None)
         if row is None:
             return None
         row["status"] = "used"
@@ -2675,10 +3190,12 @@ def release_outlook(email: str, status: str = "available", note: str | None = No
         _save_outlook(rows)
 
 
-def release_unconsumed_outlook(email: str, note: str | None = None) -> bool:
+def release_unconsumed_outlook(email: str, note: str | None = None, exclude_job_id: int | None = None) -> bool:
     """原子回收未生成本地账号且仍为 used 的 Outlook 邮箱。"""
     with _LOCK:
         if _find_by_email(_load_accounts(), email) is not None:
+            return False
+        if _has_active_job_email(email, exclude_job_id=exclude_job_id):
             return False
         rows = _load_outlook()
         row = _find_by_email(rows, email)
@@ -2794,8 +3311,13 @@ def import_generic_api_emails(records: list[dict]) -> tuple[int, int]:
 def claim_next_generic_api_email() -> dict | None:
     """原子领取一个可用通用 API 邮箱并标记为 used。"""
     with _LOCK:
+        active_emails = _active_job_email_set(_load_jobs())
         rows = sorted(_load_generic_api_emails(), key=lambda x: int(x.get("id") or 0))
-        row = next((r for r in rows if r.get("status") == "available"), None)
+        row = next((
+            r for r in rows
+            if r.get("status") == "available"
+            and str(r.get("email") or "").strip().lower() not in active_emails
+        ), None)
         if row is None:
             return None
         row["status"] = "used"
@@ -2822,10 +3344,12 @@ def release_generic_api_email(email: str, status: str = "available", note: str |
         _save_generic_api_emails(rows)
 
 
-def release_unconsumed_generic_api_email(email: str, note: str | None = None) -> bool:
+def release_unconsumed_generic_api_email(email: str, note: str | None = None, exclude_job_id: int | None = None) -> bool:
     """原子回收未生成本地账号且仍为 used 的通用 API 邮箱。"""
     with _LOCK:
         if _find_by_email(_load_accounts(), email) is not None:
+            return False
+        if _has_active_job_email(email, exclude_job_id=exclude_job_id):
             return False
         rows = _load_generic_api_emails()
         row = _find_by_email(rows, email)
@@ -3583,6 +4107,23 @@ def storage_paths() -> dict:
     }
 
 
+def refresh_static_viewer() -> Path:
+    """手动刷新静态查看器，返回 HTML 路径。"""
+    global _VIEWER_REFRESH_TIMER, _VIEWER_REFRESH_REASON
+    with _VIEWER_REFRESH_LOCK:
+        if _VIEWER_REFRESH_TIMER is not None:
+            _VIEWER_REFRESH_TIMER.cancel()
+            _VIEWER_REFRESH_TIMER = None
+        _VIEWER_REFRESH_REASON = ""
+    with _LOCK:
+        outlook_rows = _load_outlook()
+        account_rows = _load_accounts()
+        _sync_outlook_txt(outlook_rows)
+        _sync_accounts_txt(account_rows)
+        _sync_tokens_txt(account_rows)
+        return _render_static_viewer(outlook_rows=outlook_rows, account_rows=account_rows)
+
+
 # ============================================================
 # Domain email pool（Cloudflare 域名邮箱跟踪）
 # ============================================================
@@ -3641,10 +4182,12 @@ def release_domain_email(email: str, status: str = "available", note: str | None
         _save_domain_pool(rows)
 
 
-def release_unconsumed_domain_email(email: str, note: str | None = None) -> bool:
+def release_unconsumed_domain_email(email: str, note: str | None = None, exclude_job_id: int | None = None) -> bool:
     """原子回收未生成本地账号且仍为 used 的域名邮箱。"""
     with _LOCK:
         if _find_by_email(_load_accounts(), email) is not None:
+            return False
+        if _has_active_job_email(email, exclude_job_id=exclude_job_id):
             return False
         rows = _load_domain_pool()
         row = _find_domain_email(rows, email)

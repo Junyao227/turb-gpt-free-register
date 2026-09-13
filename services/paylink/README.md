@@ -44,6 +44,22 @@ default US profile. Thailand uses `OPENAI_PAY_PAYPAL_TH_PROXY` and
 `OPENAI_PAY_PAYPAL_BR_PROXY` and `OPENAI_PAY_PAYPAL_BR_PROXY_POOL`. Keep all
 proxy values in `.env`, not in `providers.ini`.
 
+Provider proxy configuration is stage-based:
+
+- `checkout`: creates the OpenAI Checkout session.
+- `promotion`: the trial / promo leg. Internally this calls
+  `/backend-api/payments/checkout/update`, but it is a separate promotion pool,
+  not a second Checkout creation pool.
+- `provider`: initializes Stripe and creates/confirms the provider payment
+  method.
+- `approve`: calls OpenAI Checkout approve; if not configured it falls back to
+  `provider`.
+
+The legacy provider keys above remain the `provider` stage. Stage-specific
+overrides use `OPENAI_PAY_<SCOPE>_<STAGE>_PROXY(_POOL)`, for example
+`OPENAI_PAY_INDIA_PROMOTION_PROXY_POOL` for UPI's VN promo leg or
+`OPENAI_PAY_PAYPAL_TH_PROMOTION_PROXY_POOL` for the Thailand PayPal promo leg.
+
 ## Run Locally
 
 ```powershell

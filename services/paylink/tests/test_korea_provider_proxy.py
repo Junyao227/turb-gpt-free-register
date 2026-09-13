@@ -134,6 +134,10 @@ def test_upi_checkout_proxy_candidates_use_india_pool(monkeypatch):
 def test_korea_and_ideal_checkout_candidates_use_target_regions(monkeypatch):
     korea_proxy = "http://fixture-user-region-KR-sid-demo-t-5:fixture-pass@proxy.example.test:443"
     ideal_proxy = "http://fixture-user-region-NL-sid-demo-t-5:fixture-pass@proxy.example.test:443"
+    monkeypatch.setenv("OPENAI_PAY_KOREA_CHECKOUT_PROXY", "")
+    monkeypatch.setenv("OPENAI_PAY_KOREA_CHECKOUT_PROXY_POOL", "")
+    monkeypatch.setenv("OPENAI_PAY_IDEAL_CHECKOUT_PROXY", "")
+    monkeypatch.setenv("OPENAI_PAY_IDEAL_CHECKOUT_PROXY_POOL", "")
     monkeypatch.setattr(app, "KOREA_PROXY_POOL", [korea_proxy])
     monkeypatch.setattr(app, "KOREA_STAGE_PROXY", "")
     monkeypatch.setattr(app, "IDEAL_PROXY_POOL", [])
@@ -171,12 +175,14 @@ def test_checkout_retries_network_proxy_error(monkeypatch):
     assert len(attempts) == 2
 
 
-def test_gopay_checkout_and_provider_stages_prefer_dedicated_japan_pool(monkeypatch):
+def test_gopay_checkout_falls_back_to_indonesia_and_provider_keeps_dedicated_japan_pool(monkeypatch):
     monkeypatch.setattr(
         app,
         "GOPAY_PROVIDER_PROXY_POOL",
         ["http://fixture-user-region-JP-sid-demo-t-5:fixture-pass@proxy.example.test:443"],
     )
+    monkeypatch.setenv("OPENAI_PAY_GOPAY_CHECKOUT_PROXY", "")
+    monkeypatch.setenv("OPENAI_PAY_GOPAY_CHECKOUT_PROXY_POOL", "")
     monkeypatch.setattr(app, "DEFAULT_PROXY_POOL", [])
     monkeypatch.setattr(app, "GOPAY_PROVIDER_STAGE_PROXY", "")
     monkeypatch.setattr(
@@ -190,7 +196,8 @@ def test_gopay_checkout_and_provider_stages_prefer_dedicated_japan_pool(monkeypa
     proxy = app.provider_stage_proxy(app.LongLinkRequest(link_type="gopay"))
 
     assert checkout_candidates[0].endswith("sid-demo-t-5:fixture-pass@proxy.example.test:443")
-    assert "region-JP" in checkout_candidates[0]
+    assert "region-ID" in checkout_candidates[0]
+    assert "region-JP" not in checkout_candidates[0]
     assert "region-JP" in proxy
 
 

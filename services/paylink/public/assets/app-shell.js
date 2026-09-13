@@ -92,16 +92,6 @@
     }
   }
 
-  async function logout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
-    } catch (_) {
-      // The login page remains the recovery path if the session is already gone.
-    }
-    const next = encodeURIComponent(window.location.pathname || "/");
-    window.location.href = `/login?scope=admin&next=${next}`;
-  }
-
   function render() {
     if (!state.shell) return;
     document.body.dataset.paylinkSection = state.activeSection;
@@ -117,13 +107,7 @@
       globalNav.append(makeLink(label, targetFor(section, provider), "paylink-app-shell__link", section === state.activeSection));
     }
 
-    const logoutButton = document.createElement("button");
-    logoutButton.className = "paylink-app-shell__logout";
-    logoutButton.type = "button";
-    logoutButton.textContent = "退出";
-    logoutButton.title = "退出登录";
-    logoutButton.addEventListener("click", logout);
-    primary.append(brand, globalNav, logoutButton);
+    primary.append(brand, globalNav);
 
     const providers = document.createElement("div");
     providers.className = "paylink-app-shell__providers";

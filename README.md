@@ -1,6 +1,14 @@
 # Turb GPT Free Register
 
-ChatGPT / OpenAI 账号自动注册与 Codex OAuth 授权工具。当前项目支持三套注册驱动：
+## Ant Browser
+
+Set `REGISTRATION_DRIVER=ant_browser` in the WebUI registration settings, then configure the Ant Browser group with its local LaunchServer address. The default LaunchServer address is `http://127.0.0.1:19876` and the default API key header is `X-Ant-Api-Key`.
+
+`ANT_BROWSER_PROFILE_MODE=managed` is the default: each registration task creates a distinct Ant Profile, applies the task proxy, starts it, attaches Selenium through its loopback CDP endpoint, and stops then deletes it when the task finishes. Set `ANT_BROWSER_KEEP_BROWSER_OPEN=True` to preserve it for debugging, or `ANT_BROWSER_DELETE_MANAGED_PROFILE=False` to stop it but retain the Profile.
+
+Set `ANT_BROWSER_PROFILE_MODE=existing` to connect to a fixed `ANT_BROWSER_PROFILE_ID`. Existing Profiles are never deleted, and a Profile that was already running is left running. The project does not install or manage Ant Chromium cores.
+
+ChatGPT / OpenAI 账号自动注册与 Codex OAuth 授权工具。当前项目支持多套注册驱动：
 
 - **protocol**：原纯协议注册，基于 `curl_cffi` + Sentinel/PoW。
 - **roxy**：RoxyBrowser 指纹浏览器 + Selenium 自动化注册，兼容新版页面流，例如 `create-account/password`、`about-you` 年龄/生日表单、地区本地化页面等。
@@ -29,6 +37,7 @@ ChatGPT / OpenAI 账号自动注册与 Codex OAuth 授权工具。当前项目�
   - `REGISTRATION_DRIVER = "cloak"`
   - `REGISTRATION_DRIVER = "browser_use"`
   - `REGISTRATION_DRIVER = "skyvern"`
+  - `REGISTRATION_DRIVER = "ant_browser"`
 - 支持 RoxyBrowser 一号一环境：自动创建、打开、关闭、删除 Roxy Profile。
 - 支持 Roxy 无头启动：`ROXY_OPEN_HEADLESS=True`。
 - 支持 CloakBrowser：免费 binary、无头模式、humanize、固定 fingerprint seed、按出口 IP 自动匹配语言/时区/WebRTC。
@@ -201,6 +210,7 @@ cp .env.example .env
 - `BROWSER_USE_API_KEY`
 - `SKYVERN_API_KEY`
 - `ROXY_API_TOKEN`
+- `ANT_BROWSER_API_KEY`
 - `QQ_IMAP_PASSWORD`
 - `CLOUDFLARE_API_KEY` / `CLOUDFLARE_CUSTOM_AUTH`（`EMAIL_SOURCE=cloudflare` 时）
 - `REMAIL_API_KEY`（`EMAIL_SOURCE=remail` 时）

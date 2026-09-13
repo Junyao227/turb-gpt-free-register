@@ -23,7 +23,7 @@ import requests
 
 from config import email as _email_cfg
 from config import proxy as _proxy_cfg
-from core.otp_utils import extract_otp
+from core.otp_utils import extract_otp, looks_like_openai_email
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ _YANGYANG_OPENAI_SUBJECT_HINTS = (
     "一時的な認証コード",
     "一時ログインコード",
 )
+_MESSAGE_TIME_SKEW_SECONDS = 2
 
 
 class GenericApiMailError(RuntimeError):
@@ -356,10 +357,16 @@ def _parse_yangyang_code_url(code_url: str) -> tuple[str, str, str] | None:
     return origin.rstrip("/"), token, email
 
 
-def _parse_yangyang_ts(value: str | None) -> float | None:
+def _parse_message_ts(value: object) -> float | None:
     if not value:
         return None
     raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
             return datetime.strptime(raw[:19], fmt).timestamp()
@@ -400,6 +407,12 @@ def _parse_generic_api_ts(value) -> float | None:
         except Exception:
             pass
     return None
+
+
+def _is_message_after(message_ts: float | None, after_ts: float | None) -> bool:
+    if after_ts is None or message_ts is None:
+        return True
+    return message_ts + _MESSAGE_TIME_SKEW_SECONDS >= after_ts
 
 
 def _extract_structured_api_code(text: str, after_ts: float | None = None) -> tuple[str, dict] | None:
@@ -464,6 +477,55 @@ def _extract_structured_api_code(text: str, after_ts: float | None = None) -> tu
         "subject": data.get("subject"),
         "from": data.get("from") or data.get("fromAddress") or data.get("sender"),
     }
+def _fetch_timestamped_feed_otp(text: str, after_ts: float | None = None) -> tuple[bool, str | None]:
+    """Read Generic API feeds shaped as {"data": [{..., "saved_at": ...}]}.
+
+    A timestamped feed is handled as a mailbox, not as a flat page containing
+    a six-digit number. That prevents a previously returned OTP from being
+    selected after the login flow requests a new one.
+    """
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return False, None
+
+    items = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not any(
+        isinstance(item, dict) and "saved_at" in item for item in items
+    ):
+        return False, None
+
+    candidates: list[tuple[float, str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        saved_at = item.get("saved_at")
+        message_ts = _parse_message_ts(saved_at)
+        if message_ts is None:
+            logger.debug("[GenericAPI] Skipping feed message without a usable saved_at timestamp")
+            continue
+        if not _is_message_after(message_ts, after_ts):
+            continue
+
+        otp_item = {
+            "subject": str(item.get("subject") or ""),
+            "from": str(item.get("from") or ""),
+            "text": _decode_data_uri(str(item.get("text") or item.get("body") or "")),
+            "content": _decode_data_uri(str(item.get("body") or item.get("content") or "")),
+        }
+        if not looks_like_openai_email(otp_item):
+            continue
+        code = extract_otp(otp_item)
+        if code:
+            candidates.append((message_ts, code, str(saved_at)))
+
+    if not candidates:
+        logger.debug("[GenericAPI] Timestamped feed has no fresh OpenAI OTP")
+        return True, None
+
+    message_ts, code, saved_at = max(candidates, key=lambda candidate: candidate[0])
+    logger.info("[GenericAPI] Selected OTP from timestamped feed: saved_at=%s", saved_at)
+    return True, code
 
 
 def _fetch_yangyang_otp(
@@ -508,11 +570,11 @@ def _fetch_yangyang_otp(
         cursor = str(data.get("next_cursor"))
 
     # API 默认新邮件在前；再次按时间倒序，尽量取最新验证码。
-    items.sort(key=lambda x: _parse_yangyang_ts(x.get("received_at") or x.get("receivedAt")) or 0, reverse=True)
+    items.sort(key=lambda x: _parse_message_ts(x.get("received_at") or x.get("receivedAt")) or 0, reverse=True)
     for item in items:
         msg_ts_raw = item.get("received_at") or item.get("receivedAt")
-        msg_ts = _parse_yangyang_ts(msg_ts_raw)
-        if after_ts and msg_ts and msg_ts + 2 < after_ts:
+        msg_ts = _parse_generic_api_ts(msg_ts_raw)
+        if not _is_message_after(msg_ts, after_ts):
             logger.debug(
                 "[GenericAPI] yangyang 跳过旧邮件: id=%s ts=%s after=%s subject=%r",
                 item.get("id"), msg_ts_raw, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(after_ts)),
@@ -607,7 +669,7 @@ def _fetch_inline_messages_page_otp(
         received_at = _strip_html_fragment(date_m.group(1) if date_m else "")
         from_addr = _strip_html_fragment(from_m.group(1) if from_m else "")
         body = _strip_html_fragment(body_m.group(1) if body_m else card)
-        msg_ts = _parse_yangyang_ts(received_at)
+        msg_ts = _parse_generic_api_ts(received_at)
         items.append({
             "mail_id": f"inline-{idx}",
             "subject": subject,
@@ -865,20 +927,21 @@ def fetch_latest_otp(
                 mailbox_mismatch = bool(mailbox and mailbox.lower() != email.lower())
                 if mailbox_mismatch:
                     structured = None
+                    feed_handled = False
+                    code = None
                     last_error = f"latest-code 返回邮箱不匹配: expected={email}, actual={mailbox}"
                 else:
+                    feed_handled, code = _fetch_timestamped_feed_otp(text, after_ts=after_ts)
                     # 此类公开 latest-code 服务的 receivedAt 可能使用独立服务器时间，
                     # 与运行机器相差数小时甚至跨日。它只返回“最新一封”，因此这里
                     # 把时间字段作为诊断信息，不作为硬过滤条件；候选更新仍由
                     # code/messageId 变化及 settle 机制负责。
-                    structured = _extract_structured_api_code(
-                        text,
-                        after_ts=None if public_inbox_api_url else after_ts,
+                    structured = None if feed_handled else _extract_structured_api_code(
+                        text, after_ts=None if public_inbox_api_url else after_ts,
                     )
                 structured_meta = structured[1] if structured else {}
-                code = structured[0] if structured else _extract_code(text)
-                if mailbox_mismatch:
-                    code = None
+                if not feed_handled:
+                    code = structured[0] if structured else _extract_code(text)
                 if code:
                     if (
                         public_inbox_api_url
@@ -925,6 +988,8 @@ def fetch_latest_otp(
                         settle_until = now_seen + settle
                     else:
                         logger.debug("[GenericAPI] 取码接口仍返回候选 OTP")
+                elif feed_handled:
+                    last_error = "Timestamped feed has no fresh OpenAI OTP"
                 else:
                     if not mailbox_mismatch:
                         if public_inbox_api_url and isinstance(public_payload, dict) and public_payload.get("code") is None:

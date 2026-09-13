@@ -127,14 +127,14 @@ def _prepare_registration_args() -> tuple[str | None, str, str]:
     return email, name, birthday
 
 
-def _release_unconsumed_job_email(email: str | None, reason: str) -> None:
+def _release_unconsumed_job_email(email: str | None, reason: str, *, job_id: int | None = None) -> None:
     """任务失败兜底：只回收尚未生成账号、仍处于 used 的邮箱领取。"""
     if not email:
         return
     try:
         from core.email_provider import release_email_if_unconsumed
 
-        release_email_if_unconsumed(email, note=f"任务未消耗，已自动回收: {reason[:180]}")
+        release_email_if_unconsumed(email, note=f"任务未消耗，已自动回收: {reason[:180]}", job_id=job_id)
     except Exception:
         logger.exception("[Service] 回收未消耗邮箱失败: %s", email)
 
@@ -329,7 +329,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
                 on_email_acquired=_on_email_acquired,
             )
             if is_stop_requested(job_id):
-                _release_unconsumed_job_email(email, "用户手动停止")
+                _release_unconsumed_job_email(email, "用户手动停止", job_id=job_id)
                 db.update_job(
                     job_id,
                     status="stopped",
@@ -366,10 +366,10 @@ def _run_one_job(job_id: int, log_file: str) -> None:
                 if _should_disable_failed_registration_email(err):
                     _disable_job_email(email_to_handle, str(err))
                 else:
-                    _release_unconsumed_job_email(email_to_handle, str(err))
+                    _release_unconsumed_job_email(email_to_handle, str(err), job_id=job_id)
                 log_logger.error(f"[Job {job_id}] 失败: {err}")
     except StopRequested as exc:
-        _release_unconsumed_job_email(email, str(exc))
+        _release_unconsumed_job_email(email, str(exc), job_id=job_id)
         log_logger.warning(f"[Job {job_id}] 已停止: {exc}")
         db.update_job(
             job_id,
@@ -382,7 +382,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
         if _should_disable_failed_registration_email(err_text):
             _disable_job_email(email, err_text)
         else:
-            _release_unconsumed_job_email(email, err_text)
+            _release_unconsumed_job_email(email, err_text, job_id=job_id)
         if is_stop_requested(job_id):
             log_logger.warning(f"[Job {job_id}] 停止中捕获异常，按停止处理: {type(exc).__name__}: {exc}")
             db.update_job(
@@ -710,26 +710,30 @@ def _account_for_job(job: dict) -> dict | None:
     return db.get_account_by_email(email) if email else None
 
 
-def get_retry_info(job: dict) -> dict:
-    """返回给 API/UI 的重试能力描述，不依赖前端猜测错误阶段。"""
-    status = str(job.get("status") or "")
-    info = {
+_RETRYABLE_JOB_STATUSES = ("failed", "stopped", "cancelled")
+
+
+def _base_retry_info(status: str) -> dict:
+    return {
         "retryable": False,
         "retry_action": None,
         "retry_label": None,
         "retry_reason": None,
         "display_status": status,
     }
-    if status not in ("failed", "stopped", "cancelled"):
+
+
+def _retry_info_from_context(job: dict, successful_retry: dict | None, account: dict | None) -> dict:
+    status = str(job.get("status") or "")
+    info = _base_retry_info(status)
+    if status not in _RETRYABLE_JOB_STATUSES:
         return info
 
-    successful_retry = db.get_successful_retry_for_job(int(job.get("id") or 0))
     if successful_retry is not None:
         info["retry_reason"] = f"后续重试任务 #{successful_retry.get('id')} 已成功"
         info["successful_retry_job_id"] = successful_retry.get("id")
         return info
 
-    account = _account_for_job(job)
     if account and job.get("account_id") is not None and status in ("failed", "stopped"):
         info["display_status"] = "success" if (account.get("codex_status") or "") == "success" else "partial_success"
 
@@ -754,6 +758,114 @@ def get_retry_info(job: dict) -> dict:
         "retry_label": "重试",
     })
     return info
+
+
+def _successful_retry_by_root(jobs: list[dict]) -> dict[int, dict]:
+    successful: dict[int, dict] = {}
+    for row in jobs:
+        if row.get("status") != "success":
+            continue
+        try:
+            root_id = int(row.get("root_job_id") or 0)
+            row_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if root_id <= 0 or row_id <= 0:
+            continue
+        prev = successful.get(root_id)
+        if prev is None or row_id > int(prev.get("id") or 0):
+            successful[root_id] = row
+    return successful
+
+
+def _account_for_job_from_maps(
+    job: dict,
+    account_by_id: dict[int, dict],
+    account_by_email: dict[str, dict],
+) -> dict | None:
+    account_id = job.get("account_id")
+    if account_id is not None:
+        try:
+            account = account_by_id.get(int(account_id))
+            if account is not None:
+                return account
+        except (TypeError, ValueError):
+            pass
+    email = str(job.get("email") or "").strip().lower()
+    return account_by_email.get(email) if email else None
+
+
+def get_retry_info_map(jobs: list[dict], *, all_jobs: list[dict] | None = None) -> dict[int, dict]:
+    """Batch retry metadata for job lists without per-row JSON reloads."""
+    rows = [dict(job) for job in jobs]
+    result: dict[int, dict] = {}
+    retry_rows: list[dict] = []
+    for row in rows:
+        status = str(row.get("status") or "")
+        try:
+            row_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if row_id <= 0:
+            continue
+        result[row_id] = _base_retry_info(status)
+        if status in _RETRYABLE_JOB_STATUSES:
+            retry_rows.append(row)
+
+    if not retry_rows:
+        return result
+
+    all_rows = [dict(job) for job in (all_jobs if all_jobs is not None else db.list_jobs(limit=1_000_000))]
+    successful_by_root = _successful_retry_by_root(all_rows)
+    successful_for_job: dict[int, dict | None] = {}
+    needs_accounts = False
+    for row in retry_rows:
+        try:
+            row_id = int(row.get("id") or 0)
+            root_id = int(row.get("root_job_id") or row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        successful_retry = successful_by_root.get(root_id)
+        if successful_retry is not None and int(successful_retry.get("id") or 0) == row_id:
+            successful_retry = None
+        successful_for_job[row_id] = successful_retry
+        if successful_retry is None:
+            needs_accounts = True
+
+    account_by_id: dict[int, dict] = {}
+    account_by_email: dict[str, dict] = {}
+    if needs_accounts:
+        for account in db.list_accounts(limit=1_000_000, archived="all"):
+            try:
+                account_id = int(account.get("id") or 0)
+            except (TypeError, ValueError):
+                account_id = 0
+            if account_id > 0:
+                account_by_id[account_id] = account
+            email = str(account.get("email") or "").strip().lower()
+            if email:
+                account_by_email[email] = account
+
+    for row in retry_rows:
+        try:
+            row_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        successful_retry = successful_for_job.get(row_id)
+        account = None if successful_retry is not None else _account_for_job_from_maps(row, account_by_id, account_by_email)
+        result[row_id] = _retry_info_from_context(row, successful_retry, account)
+    return result
+
+
+def get_retry_info(job: dict) -> dict:
+    """返回给 API/UI 的重试能力描述，不依赖前端猜测错误阶段。"""
+    status = str(job.get("status") or "")
+    if status not in _RETRYABLE_JOB_STATUSES:
+        return _base_retry_info(status)
+
+    successful_retry = db.get_successful_retry_for_job(int(job.get("id") or 0))
+    account = None if successful_retry is not None else _account_for_job(job)
+    return _retry_info_from_context(job, successful_retry, account)
 
 
 def retry_job(job_id: int, workers: int | None = None) -> dict:
@@ -900,6 +1012,7 @@ def request_stop_job(job_id: int) -> dict:
             _release_unconsumed_job_email(
                 str(job.get("email") or "").strip() or None,
                 "任务实例不存在，确认未继续执行",
+                job_id=job_id,
             )
             _append_job_log(job_id, "用户手动停止：未找到运行中的任务实例，已直接标记为已停止。")
             logger.warning("[Service] 用户停止任务 #%s：任务实例不存在，已直接标记 stopped", job_id)

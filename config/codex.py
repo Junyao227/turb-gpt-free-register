@@ -80,6 +80,16 @@ CPA_MANAGEMENT_KEY: str = env_str("CPA_MANAGEMENT_KEY", "")
 # CPA 管理接口请求超时（秒）
 CPA_REQUEST_TIMEOUT: int = 30
 
+# CDK 管理端地址。批量“上传到 CDK 管理”会取 origin 调用
+# POST /api/management/import-cpa，并由管理端自动创建 CDK 记录。
+CDK_MGMT_MANAGEMENT_URL: str = ""
+
+# CDK 管理端集成密钥，同时作为 Authorization: Bearer 和 X-Management-Key。
+CDK_MGMT_MANAGEMENT_KEY: str = env_str("CDK_MGMT_MANAGEMENT_KEY", "")
+
+# CDK 管理端接口请求超时（秒）。
+CDK_MGMT_REQUEST_TIMEOUT: int = 30
+
 # 提交 OAuth callback 给 CPA 的重试次数/基础间隔。
 # 遇到 409 Timeout waiting for OAuth callback、网络超时或 5xx 时，会按同一个 callback URL 重试。
 CPA_CALLBACK_SUBMIT_RETRIES: int = 5
@@ -193,6 +203,9 @@ apply_env_overrides(globals(), {
     'CPA_MANAGEMENT_URL': 'str',
     'CPA_MANAGEMENT_KEY': 'str',
     'CPA_REQUEST_TIMEOUT': 'int',
+    'CDK_MGMT_MANAGEMENT_URL': 'str',
+    'CDK_MGMT_MANAGEMENT_KEY': 'str',
+    'CDK_MGMT_REQUEST_TIMEOUT': 'int',
     'CPA_CALLBACK_SUBMIT_RETRIES': 'int',
     'CPA_CALLBACK_SUBMIT_RETRY_DELAY': 'int',
     'CPA_SAVE_CALLBACK_RECEIPT': 'bool',

@@ -1,17 +1,28 @@
 :root {
   --paylink-shell-ink: #171717;
-  --paylink-shell-muted: #667085;
-  --paylink-shell-line: #dfe3e8;
+  --paylink-shell-muted: #737373;
+  --paylink-shell-line: #e5e7eb;
   --paylink-shell-surface: #ffffff;
-  --paylink-shell-soft: #f4f5f7;
-  --paylink-shell-provider: #087f5b;
+  --paylink-shell-soft: #f5f5f5;
+  --paylink-shell-subtle: #fafafa;
+  --paylink-shell-provider: #171717;
+  --paylink-shell-brand: #ca8a04;
+  --paylink-shell-active: #111827;
+  --paylink-shell-hover: #f3f4f6;
+  --paylink-shell-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
 
 .paylink-app-shell {
   width: min(1380px, calc(100vw - 32px));
-  margin: 18px auto 0;
+  margin: 16px auto 0;
+  border: 1px solid var(--paylink-shell-line);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--paylink-shell-ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+  box-shadow: var(--paylink-shell-shadow);
+  backdrop-filter: blur(18px);
 }
 
 .paylink-app-shell,
@@ -27,14 +38,17 @@
 }
 
 .paylink-app-shell__primary {
-  gap: 18px;
-  min-height: 54px;
+  gap: 14px;
+  min-height: 64px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--paylink-shell-line);
+  background: var(--paylink-shell-surface);
 }
 
 .paylink-app-shell__brand {
   display: inline-flex;
   align-items: center;
+  gap: 10px;
   flex: 0 0 auto;
   min-height: 0;
   padding: 0;
@@ -49,32 +63,50 @@
   white-space: nowrap;
 }
 
+.paylink-app-shell__brand::before {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--paylink-shell-ink);
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  content: "P";
+  font-size: 16px;
+  font-weight: 900;
+}
+
 .paylink-app-shell__global,
 .paylink-app-shell__provider-list {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 .paylink-app-shell__global {
   flex: 1 1 auto;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--paylink-shell-line);
+  border-radius: 999px;
+  background: #f8fafc;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
 }
 
 .paylink-app-shell__link,
-.paylink-app-shell__provider-link,
-.paylink-app-shell__logout {
+.paylink-app-shell__provider-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  min-height: 36px;
-  border: 0;
-  border-radius: 6px;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: #475467;
   font: inherit;
@@ -86,33 +118,28 @@
 }
 
 .paylink-app-shell__link {
-  padding: 0 11px;
+  padding: 0 14px;
 }
 
 .paylink-app-shell__link:hover,
-.paylink-app-shell__provider-link:hover,
-.paylink-app-shell__logout:hover {
-  background: var(--paylink-shell-soft);
+.paylink-app-shell__provider-link:hover {
+  border-color: var(--paylink-shell-line);
+  background: var(--paylink-shell-hover);
   color: var(--paylink-shell-ink);
 }
 
 .paylink-app-shell__link.is-active {
-  background: var(--paylink-shell-ink);
+  background: var(--paylink-shell-active);
   color: #ffffff;
-}
-
-.paylink-app-shell__logout {
-  flex: 0 0 auto;
-  min-width: 42px;
-  padding: 0 10px;
-  border: 1px solid var(--paylink-shell-line);
-  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.14);
 }
 
 .paylink-app-shell__providers {
-  gap: 14px;
-  min-height: 48px;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--paylink-shell-line);
+  background: var(--paylink-shell-subtle);
 }
 
 .paylink-app-shell__provider-label {
@@ -125,6 +152,7 @@
 
 .paylink-app-shell__provider-list {
   flex: 1 1 auto;
+  gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
@@ -133,23 +161,22 @@
 
 .paylink-app-shell__provider-link {
   position: relative;
-  min-height: 47px;
-  padding: 0 12px;
-  border-radius: 0;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--paylink-shell-surface);
 }
 
 .paylink-app-shell__provider-link.is-active {
-  color: var(--paylink-shell-provider);
+  border-color: var(--paylink-shell-provider);
+  background: var(--paylink-shell-provider);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
 .paylink-app-shell__provider-link.is-active::after {
-  position: absolute;
-  right: 10px;
-  bottom: -1px;
-  left: 10px;
-  height: 3px;
-  background: var(--paylink-shell-provider);
   content: "";
+  display: none;
 }
 
 .paylink-shell-ready .site-nav,
@@ -185,10 +212,13 @@
   .paylink-app-shell {
     width: calc(100vw - 20px);
     margin-top: 10px;
+    border-radius: 20px;
   }
 
   .paylink-app-shell__primary {
     gap: 8px;
+    min-height: 58px;
+    padding: 9px 10px;
   }
 
   .paylink-app-shell__brand {
@@ -199,8 +229,14 @@
     padding-bottom: 3px;
   }
 
+  .paylink-app-shell__link {
+    padding: 0 12px;
+  }
+
   .paylink-app-shell__providers {
     gap: 6px;
+    min-height: 52px;
+    padding: 8px 10px;
   }
 
   .paylink-shell-ready .shell {

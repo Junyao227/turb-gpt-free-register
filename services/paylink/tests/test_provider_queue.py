@@ -204,7 +204,9 @@ def test_paypal_rejects_a_country_or_locale_outside_the_maintained_profile_catal
     with pytest.raises(HTTPException, match="unsupported PayPal country profile"):
         app.effective_country(app.LongLinkRequest(link_type="paypal", billing_country="JP", payment_locale="ja"))
     with pytest.raises(HTTPException, match="unsupported PayPal locale"):
-        app.effective_country(app.LongLinkRequest(link_type="paypal", billing_country="TH", payment_locale="en"))
+        app.effective_country(app.LongLinkRequest(link_type="paypal", billing_country="TH", payment_locale="ja"))
+    assert app.effective_country(app.LongLinkRequest(link_type="paypal", billing_country="TH", payment_locale="en")) == "TH"
+    assert app.effective_payment_locale("paypal", "en", "TH") == "en"
 
 
 def test_paypal_core_returns_standard_checkout_without_provider_submission(monkeypatch):
@@ -222,6 +224,7 @@ def test_paypal_core_returns_standard_checkout_without_provider_submission(monke
     monkeypatch.setattr(app, "set_progress", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(app, "provider_stage_proxy", lambda _req: pytest.fail("PayPal must not start a provider stage"))
+    monkeypatch.setattr(app, "proxy_stage_has_config", lambda *_args, **_kwargs: False)
 
     result = app.generate_long_link_core(
         app.LongLinkRequest(link_type="paypal", billing_country="US", payment_locale="en", job_id="paypal-core-test")

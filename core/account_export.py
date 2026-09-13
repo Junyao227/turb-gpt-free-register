@@ -181,6 +181,39 @@ def post_register_dwell(email: str, *, label: str = "注册后") -> None:
     time.sleep(seconds)
 
 
+def _post_register_dwell_seconds() -> float:
+    try:
+        from config import register as _register_cfg
+
+        raw = str(getattr(_register_cfg, "POST_REGISTER_DWELL_SECONDS_RANGE", "18,45") or "0,0").strip()
+    except Exception:
+        raw = "0,0"
+    try:
+        parts = [float(x.strip()) for x in raw.replace(";", ",").replace("|", ",").split(",") if x.strip()]
+        if not parts:
+            lo = hi = 0.0
+        elif len(parts) == 1:
+            lo = hi = parts[0]
+        else:
+            lo, hi = parts[0], parts[1]
+    except Exception:
+        lo = hi = 0.0
+    lo, hi = max(0.0, lo), max(0.0, hi)
+    if hi < lo:
+        lo, hi = hi, lo
+    seconds = random.uniform(lo, hi) if hi > lo else lo
+    return max(0.0, min(300.0, seconds))
+
+
+def post_register_dwell(email: str, *, label: str = "注册后") -> None:
+    """注册成功后随机停留一段时间；供不同浏览器驱动复用。"""
+    seconds = _post_register_dwell_seconds()
+    if seconds <= 0:
+        return
+    logger.info("[%s] 注册成功后随机停留 %.1fs：%s", label, seconds, email)
+    time.sleep(seconds)
+
+
 def _account_material_line(email: str, row: dict | None = None) -> str:
     """优先输出 Outlook 原始素材；没有素材时退回邮箱地址。"""
     if row:
@@ -647,6 +680,8 @@ def save_account_data(
         batch_dir=batch_dir,
     )
     logger.info("[Save] 账号及凭证已保存到 SQLite, id=%s, email=%s", row_id, email)
+    if batch_folder:
+        logger.info("[Save] 批次归档目录: %s", batch_folder)
 
     auto_twofa = False
     try:
@@ -677,7 +712,6 @@ def save_account_data(
                 f"[2FA] 注册后自动开启 2FA 入队异常（不影响注册结果）: "
                 f"{email}, {type(exc).__name__}: {str(exc)[:180]}"
             )
-
     if auto_plan_check is None:
         try:
             from config import register as _register_cfg

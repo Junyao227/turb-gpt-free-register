@@ -171,9 +171,12 @@
       flex-basis: 100%; margin-top: 1px; color: #667085; font-size: 12px;
       display: inline-flex; align-items: center; gap: 4px;
     }
+    .extract-link-cell--failed { align-items: flex-start; }
     .extract-link-error {
       flex-basis: 100%; color: var(--red); font-size: 12px; line-height: 1.35;
       max-width: 260px; white-space: normal; overflow-wrap: anywhere;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .agent-token-cell { margin-top: 4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
     .agent-token-cell button { min-height:24px; border:1px solid #b9dfc9; border-radius:999px; background:#f0fbf5; color:#166534; padding:0 9px; font-size:12px; font-weight:800; cursor:pointer; }
@@ -738,6 +741,7 @@
     .accounts-table-v2 .col-id { width: 72px; }
     .accounts-table-v2 .col-email { width: 330px; }
     .accounts-table-v2 .col-source { width: 90px; }
+    .accounts-table-v2 .col-proxy { width: 140px; }
     .accounts-table-v2 .col-token { width: 100px; }
     .accounts-table-v2 .col-password { width: 120px; }
     .accounts-table-v2 .col-plan { width: 120px; }
@@ -1851,6 +1855,22 @@
     .config-section-v2-body label.fld > textarea {
       width: 100%; max-width: 100%;
     }
+    .config-secret-input {
+      position: relative; margin-top: 6px;
+    }
+    .config-secret-input > input {
+      width: 100%; max-width: 100%; margin-top: 0; padding-right: 44px;
+    }
+    .config-secret-toggle {
+      position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+      width: 30px; height: 30px; min-height: 30px; margin: 0; padding: 0;
+      border: none; border-radius: 5px; background: transparent; color: #909399;
+      display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .config-secret-toggle:hover { background: #f0f5ff; color: #377DFF; }
+    .config-secret-toggle:focus-visible { outline: 2px solid #377DFF; outline-offset: 1px; }
+    .config-secret-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .config-secret-toggle.is-visible .config-secret-eye-slash { display: none; }
     .config-section-v2-body label.fld .hint {
       line-height: 1.45; white-space: normal; overflow: visible;
       overflow-wrap: anywhere; word-break: break-word;
@@ -2316,6 +2336,7 @@
           <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnCheckSelectedLiveV2" onclick="checkSelectedLive()" title="重新登录选中账号；成功且未封号则标记正常，并刷新最新 AT/accessToken">查活</button>
           <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnCheckSelectedPlansV2" disabled title="查询选中账号当前套餐；free 账号会检查 Plus 试用资格">查套餐</button>
           <button type="button" class="jobs-tb-btn jobs-tb-btn--good" id="btnExtractSelectedLinksV2" disabled title="给选中的 free(可Plus试用) 账号批量提链，类型按配置 PIX/UPI/KAKAO_PAY/TWINT/IDEAL/GCASH/GOPAY/GRABPAY/PAYPAL">提链</button>
+          <button type="button" class="jobs-tb-btn" id="btnClearSelectedExtractLinksV2" disabled title="批量清除选中账号里的提链失败/停止状态，不删除账号、token 或套餐结果">清提链错误</button>
         </div>
         <div class="acc-v2-btn-group">
           <span class="acc-v2-btn-group-title">Codex</span>
@@ -2326,6 +2347,7 @@
         <div class="acc-v2-btn-group">
           <span class="acc-v2-btn-group-title">Token</span>
           <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnRefreshSelectedChatGPTTokensV2" disabled title="使用已保存的 ChatGPT OAuth refresh token 刷新选中账号；没有可用 refresh token 的账号会自动跳过">刷新 Token</button>
+          <button type="button" class="jobs-tb-btn jobs-tb-btn--good" id="btnCopySelectedTokensV2" disabled title="复制选中账号的 Token，每个账号一行">复制选中Token</button>
         </div>
         <div class="acc-v2-btn-group">
           <span class="acc-v2-btn-group-title">批量</span>
@@ -2341,14 +2363,14 @@
         </div>
         <div class="acc-v2-btn-group">
           <span class="acc-v2-btn-group-title">全部</span>
-          <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnCopyAllTokensV2" title="复制当前页所有 Token，每个账号一行">复制Token</button>
+          <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnCopyAllTokensV2" title="复制当前页所有 Token，每个账号一行；不受勾选状态影响">复制本页Token</button>
           <button type="button" class="jobs-tb-btn jobs-tb-btn--good" id="btnCopyAllLinesV2" title="复制当前页所有账号整行，每个账号一行">复制整行</button>
         </div>
       </div>
       <div class="accounts-table-v2-wrap">
         <table class="accounts-table-v2">
           <colgroup>
-            <col class="col-check"><col class="col-id"><col class="col-email"><col class="col-source">
+            <col class="col-check"><col class="col-id"><col class="col-email"><col class="col-source"><col class="col-proxy">
             <col class="col-token"><col class="col-password"><col class="col-plan"><col class="col-note"><col class="col-small">
             <col class="col-status"><col class="col-time"><col class="col-actions">
           </colgroup>
@@ -2358,6 +2380,7 @@
               <th class="col-id">ID</th>
               <th class="col-email">邮箱</th>
               <th class="col-source">来源</th>
+              <th class="col-proxy">注册节点</th>
               <th class="col-token">Token</th>
               <th class="col-password">密码</th>
               <th class="col-plan">套餐</th>
@@ -2450,6 +2473,7 @@
         <button type="button" class="jobs-tb-btn" id="showArchivedCodexV2" aria-pressed="false" title="默认只显示未归档凭证；开启后单独查看归档凭证">查看归档</button>
         <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnCodexDownloadBulkV2" disabled title="把选中的多个本地凭证打包成一个 JSON 文件下载（备份/迁移用，CPA 不能直接读，需先解包）">下载本地</button>
         <button type="button" class="jobs-tb-btn jobs-tb-btn--good" id="btnCodexDownloadBulkCpaV2" disabled title="从 CPA auth-files 下载选中账号的真实 Codex JSON，并打包成 ZIP（可直接解压放入 CPA auth-dir）">从CPA下载</button>
+        <button type="button" class="jobs-tb-btn jobs-tb-btn--primary" id="btnCodexUploadBulkCdkV2" disabled title="按邮箱从 CPA 拉取真实 Codex JSON，在 CDK 管理端自动创建或补全记录并上传 CPA 文件">上传到CDK管理</button>
         <button type="button" class="jobs-tb-btn" id="btnCodexArchiveBulkV2" disabled title="归档选中的 Codex 授权凭证；默认列表不再显示">归档选中</button>
         <button type="button" class="jobs-tb-btn jobs-tb-btn--danger" id="btnCodexDeleteBulkV2" disabled title="删除选中的本地 Codex JSON 凭证文件">删除选中</button>
       </div>
@@ -2683,11 +2707,35 @@ let SHOW_PLUS_ACCOUNTS_ONLY = false;
 let SHOW_PLUS_TRIAL_ACCOUNTS_ONLY = false;
 let SHOW_FREE_ACCOUNTS_ONLY = false;
 const ACCOUNT_SELECTED = new Set();
+const EXTRACT_LINK_FIELDS = [
+  'extract_link_status',
+  'extract_link_ok',
+  'extract_link_trigger',
+  'extract_link_type',
+  'extract_link_queued_at',
+  'extract_link_started_at',
+  'extract_link_completed_at',
+  'extract_link_checked_at',
+  'extract_link_error',
+  'extract_link_message',
+  'extract_link_job_id',
+  'extract_link_long_url',
+  'extract_link_copy_paste',
+  'extract_link_image_url_png',
+  'extract_link_image_url_svg',
+  'extract_link_payment_method',
+  'extract_link_payment_link_type',
+  'extract_link_expires_at',
+  'extract_link_result_json',
+];
 const OUTLOOK_SELECTED = new Set();
 let JOBS = [];
 let JOBS_TOTAL = 0;
 let JOB_STATUS_COUNTS = {};
 let jobsRenderSignature = '';
+let jobsLoading = false;
+let summaryLoading = false;
+let summaryPending = false;
 const JOB_SELECTED = new Set();
 let activeLogJob = null, logTimer = null, jobsTimer = null;
 
@@ -2824,6 +2872,18 @@ function isPlaceholderEmpty(v) {
   return !s || ['-', '—', '无', '空', 'none', 'null', 'n/a', 'na'].includes(s.toLowerCase());
 }
 function short(v, n=40) { const s = v || ''; return s.length > n ? s.slice(0,n)+'…' : s; }
+function _agentErrorSummary(v) {
+  const text = String(v || '').trim();
+  if (!text) return '';
+  const code = (text.match(/"code"\s*:\s*"([^"]+)"/i) || [])[1] || '';
+  const msg = (text.match(/"message"\s*:\s*"([^"]+)"/i) || [])[1] || '';
+  const status = (text.match(/\b(\d{3})\s+\{/ ) || [])[1] || '';
+  if (status && code) return `${status} · ${code}`;
+  if (code && msg) return `${code}: ${msg}`;
+  if (code) return code;
+  if (msg) return msg;
+  return short(text, 120);
+}
 function copyId(v) { if (!v) return ''; const id = 'c'+(++copySeq); copyStore.set(id, v); return id; }
 function cbtn(label, value, cls='') { const id = copyId(value); return `<button class="${cls}" data-copy-id="${id}" ${id?'':'disabled'}>${label}</button>`; }
 function pill(status) {
@@ -2909,6 +2969,8 @@ $$('nav button').forEach(b => b.addEventListener('click', () => activateTab(b.da
 
 // ---------- 概览 ----------
 async function loadSummary() {
+  if (summaryLoading) { summaryPending = true; return; }
+  summaryLoading = true;
   try {
     const s = await api('/api/summary');
     $('#statAccounts').textContent = s.accounts;
@@ -2917,6 +2979,13 @@ async function loadSummary() {
     $('#statUsed').textContent = s.outlook_used;
     $('#statFailed').textContent = s.outlook_failed;
   } catch(e) {}
+  finally {
+    summaryLoading = false;
+    if (summaryPending) {
+      summaryPending = false;
+      setTimeout(loadSummary, 0);
+    }
+  }
 }
 
 // ---------- 注册 / 任务 ----------
@@ -3098,22 +3167,32 @@ function updateJobsSelectionUi(pageRows = null) {
 }
 
 async function refreshJobs() {
+  if (jobsLoading) return;
+  jobsLoading = true;
   try {
     const p = PAGERS.jobs;
-    const res = await api(`/api/jobs?paged=1&page=${encodeURIComponent(p.page)}&page_size=${encodeURIComponent(p.size)}`);
-    const nextJobs = res.items || [];
+    const fetchPage = () => api(`/api/jobs?paged=1&page=${encodeURIComponent(p.page)}&page_size=${encodeURIComponent(p.size)}`);
+    let res = await fetchPage();
+    let nextJobs = res.items || [];
     JOBS_TOTAL = Number(res.total || nextJobs.length || 0);
     JOB_STATUS_COUNTS = res.status_counts || {};
-    const totalPages = Math.max(1, Math.ceil(JOBS_TOTAL / p.size));
-    if (p.page > totalPages) { p.page = totalPages; return refreshJobs(); }
+    let totalPages = Math.max(1, Math.ceil(JOBS_TOTAL / p.size));
+    if (p.page > totalPages) {
+      p.page = totalPages;
+      res = await fetchPage();
+      nextJobs = res.items || [];
+      JOBS_TOTAL = Number(res.total || nextJobs.length || 0);
+      JOB_STATUS_COUNTS = res.status_counts || {};
+      totalPages = Math.max(1, Math.ceil(JOBS_TOTAL / p.size));
+    }
     const nextSignature = JSON.stringify({items: nextJobs, total: JOBS_TOTAL, status_counts: JOB_STATUS_COUNTS, page: p.page, size: p.size});
     JOBS = nextJobs;
     if (nextSignature !== jobsRenderSignature) {
       jobsRenderSignature = nextSignature;
       renderJobs();
     }
-    loadSummary();
   } catch(e) {}
+  finally { jobsLoading = false; }
 }
 
 let modalScrollY = 0;
@@ -3462,7 +3541,8 @@ function _codexAgentCell(r) {
   const s = r.codex_agent_status || '';
   const err = r.codex_agent_error || '';
   const msg = r.codex_agent_message || '';
-  const title = esc(msg || r.codex_agent_runtime_id || '');
+  const detail = err || msg || r.codex_agent_runtime_id || '';
+  const title = esc(detail);
   if (s === 'queued') return `<div class="agent-token-cell"><span class="pill status-running" title="${title}">排队中</span></div>`;
   if (s === 'running') return `<div class="agent-token-cell"><span class="pill status-running" title="${title}">生成中</span></div>`;
   if (s === 'success') {
@@ -3474,7 +3554,11 @@ function _codexAgentCell(r) {
     return `<div class="agent-token-cell"><span class="pill status-success" title="${title}">${esc(rid)}</span>${copy}${download}${uploadSub2}${regen}</div>`;
   }
   const gen = r.has_access_token ? `<button data-codex-agent="${esc(r.id)}" title="生成 Codex CLI agent_identity auth.json/token">生成Agent</button>` : '';
-  if (s === 'failed') return `<div class="agent-token-cell"><span class="pill status-failed" title="${title}">失败</span>${gen}</div>`;
+  if (s === 'failed') {
+    const reason = _agentErrorSummary(detail);
+    const reasonHtml = detail ? `<div class="extract-link-error" title="${title}">${esc(reason)}</div>` : '';
+    return `<div class="agent-token-cell"><span class="pill status-failed" title="${title}">失败</span>${reasonHtml}${gen}</div>`;
+  }
   return gen ? `<div class="agent-token-cell">${gen}</div>` : '<span class="muted">-</span>';
 }
 function _fmtPlanTime(v, dateOnly = false) {
@@ -3584,6 +3668,11 @@ function _fmtExtractExpire(v) {
   }
   return _fmtPlanTime(raw, false) || raw;
 }
+function _shortExtractError(v, limit = 96) {
+  const raw = (v || '').toString().replace(/\s+/g, ' ').trim();
+  if (!raw) return '未知原因';
+  return raw.length > limit ? raw.slice(0, limit) + '…' : raw;
+}
 function _extractLinkCell(r) {
   const s = r.extract_link_status || '';
   const err = r.extract_link_error || '';
@@ -3603,7 +3692,8 @@ function _extractLinkCell(r) {
   }
   if (s === 'failed') {
     const reason = err || msg || '未知原因';
-    return `<div class="extract-link-cell"><span class="pill status-failed" title="${esc(reason)}">提链失败</span><div class="extract-link-error" title="${esc(reason)}">${esc(reason)}</div></div>`;
+    const shortReason = _shortExtractError(reason);
+    return `<div class="extract-link-cell extract-link-cell--failed"><span class="pill status-failed" title="${esc(reason)}">提链失败</span><div class="extract-link-error" title="${esc(reason)}">${esc(shortReason)}</div></div>`;
   }
   return '';
 }
@@ -3613,7 +3703,7 @@ function _extractLinkAction(r) {
   const plan = (r.current_plan_type || r.plan_type || '').toString().toLowerCase();
   const eligible = plan === 'free' && !!r.plus_trial_eligible;
   if (!eligible) return '';
-  const failedReason = s === 'failed' ? (r.extract_link_error || r.extract_link_message || '') : '';
+  const failedReason = s === 'failed' ? _shortExtractError(r.extract_link_error || r.extract_link_message || '') : '';
   return `<button class="good" data-extract-link="${esc(r.id)}" title="${esc(failedReason ? '重新提链；上次失败原因：' + failedReason : '为该 free(可Plus试用) 账号创建 PIX/UPI/KAKAO_PAY/TWINT/IDEAL/GCASH/GOPAY/GRABPAY/PAYPAL 提链任务')}">提链</button>`;
 }
 function _codexAction(r) {
@@ -3648,8 +3738,8 @@ function _tokenCellV2(r) {
   const live = r.live_check_status || '';
   const liveErr = r.live_check_error || '';
   const liveAt = r.live_checked_at || '';
-  let liveHtml = '';
   const liveFp = r.live_check_fingerprint_text || '';
+  let liveHtml = '';
   if (live === 'live') liveHtml = `<div class="acc-v2-sub" title="${esc([liveAt, liveFp].filter(Boolean).join('\n'))}">查活: 正常${liveFp ? ` · ${esc(liveFp)}` : ''}</div>`;
   else if (live === 'queued') liveHtml = `<div class="acc-v2-sub" title="${esc(liveAt)}" style="color:#e6a23c">查活: 排队</div>`;
   else if (live === 'running') liveHtml = `<div class="acc-v2-sub" title="${esc(liveAt)}" style="color:#e6a23c">查活: 运行中</div>`;
@@ -3719,6 +3809,7 @@ function renderAccounts() {
         ${['queued','running'].includes(r.email_change_status) ? '<div class="acc-v2-email-status">换绑中</div>' : (r.email_change_status === 'failed' ? `<div class="acc-v2-email-status" title="${esc(r.email_change_error || '')}">换绑失败: ${esc(r.email_change_error || '-')}</div>` : '')}
       </td>
       <td class="col-source">${esc(r.email_source || '-')}</td>
+      <td class="col-proxy" title="${esc(r.proxy_used || '')}">${esc(r.proxy_used || '-')}</td>
       <td class="col-token">${_tokenCellV2(r)}</td>
       <td class="col-password">${r.password ? `<span class="mono" title="${esc(r.password)}">${esc(short(r.password, 18))}</span>` : '<span class="acc-v2-muted">-</span>'}</td>
       <td class="col-plan">${_planCell(r)}<div class="acc-v2-sub">${_extractLinkCell(r)}</div></td>
@@ -3739,7 +3830,7 @@ function renderAccounts() {
 
   const bodyV2 = $('#accountsBodyV2');
   if (bodyV2) {
-    bodyV2.innerHTML = rows.map(rowHtmlV2).join('') || '<tr><td colspan="12" style="text-align:center;color:#909399;padding:28px;">暂无账号</td></tr>';
+    bodyV2.innerHTML = rows.map(rowHtmlV2).join('') || '<tr><td colspan="13" style="text-align:center;color:#909399;padding:28px;">暂无账号</td></tr>';
   }
   updateAccountSelectionUi(rows);
   _renderPager('accounts', total);
@@ -3754,6 +3845,8 @@ function updateAccountSelectionUi(pageRows = null) {
   const archiveTitle = SHOW_ARCHIVED_ACCOUNTS ? '把选中的归档账号恢复到默认账号列表' : '归档选中的账号；默认账号列表将不再查询/显示这些账号';
   const v2Ids = [
     'btnCheckSelectedPlansV2', 'btnExtractSelectedLinksV2',
+    'btnClearSelectedExtractLinksV2',
+    'btnGenerateSelectedAgentV2', 'btnDownloadSelectedAgentV2', 'btnUploadSelectedAgentSub2V2',
     'btnRetrySelectedCodexV2', 'btnDownloadSelectedCpaV2', 'btnStopSelectedCodexV2',
     'btnRefreshSelectedChatGPTTokensV2',
     'btnNoteSelectedAccountsV2', 'btnCopySelectedLinesV2', 'btnCopySelectedEmailsV2',
@@ -4695,6 +4788,65 @@ async function extractOneLink(id, btn) {
   }
 }
 
+function isClearableExtractLinkState(acc) {
+  if (!acc) return false;
+  const status = (acc.extract_link_status || '').toString();
+  if (['queued','running'].includes(status)) return false;
+  return ['failed','stopped'].includes(status) || (!status && !!(acc.extract_link_error || acc.extract_link_message));
+}
+
+function clearExtractFieldsLocal(ids) {
+  const idSet = new Set((ids || []).map(id => Number(id)).filter(id => Number.isFinite(id)));
+  if (!idSet.size) return;
+  let changed = false;
+  ACCOUNTS = ACCOUNTS.map(acc => {
+    if (!idSet.has(Number(acc.id))) return acc;
+    const next = {...acc};
+    EXTRACT_LINK_FIELDS.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(next, key)) {
+        delete next[key];
+        changed = true;
+      }
+    });
+    return next;
+  });
+  if (changed) renderAccounts();
+  else updateAccountSelectionUi();
+}
+
+async function clearSelectedExtractLinks() {
+  const ids = Array.from(ACCOUNT_SELECTED).map(Number);
+  if (!ids.length) { showToast('请先选择账号'); return; }
+  const selected = ids.map(id => ACCOUNTS.find(a => Number(a.id) === Number(id))).filter(Boolean);
+  const clearable = selected.filter(isClearableExtractLinkState);
+  if (!clearable.length) { showToast('选中账号里没有可清除的提链失败状态'); return; }
+  if (!confirm(`确定批量清除 ${clearable.length} 个账号的提链失败/停止状态吗？\n\n不会删除账号、access_token、套餐结果或成功提链链接。`)) return;
+  const btn = $('#btnClearSelectedExtractLinksV2');
+  const old = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '清除中…';
+  }
+  try {
+    const r = await api('/api/accounts/extract-link/clear-bulk', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({account_ids: clearable.map(a => Number(a.id))}),
+    });
+    const clearedIds = (r.cleared || []).map(item => Number(item.id)).filter(id => Number.isFinite(id));
+    clearExtractFieldsLocal(clearedIds);
+    const skipped = r.skipped_count || 0;
+    showToast(skipped ? `已清除 ${r.cleared_count || 0} 个，跳过 ${skipped} 个` : `已清除 ${r.cleared_count || 0} 个`);
+    await pollAccountPlanStatuses();
+  } catch(err) {
+    showToast('批量清除失败: ' + err.message);
+    updateAccountSelectionUi();
+  } finally {
+    if (btn) btn.textContent = old;
+    updateAccountSelectionUi();
+  }
+}
+
 async function extractSelectedLinks() {
   const ids = Array.from(ACCOUNT_SELECTED);
   if (ids.length === 0) { showToast('请先选择账号'); return; }
@@ -5230,13 +5382,16 @@ $('#emailChangeModalV2').addEventListener('click', e => { if (e.target.id === 'e
   };
   bind('btnCheckSelectedPlansV2', checkSelectedPlans);
   bind('btnExtractSelectedLinksV2', extractSelectedLinks);
+  bind('btnClearSelectedExtractLinksV2', clearSelectedExtractLinks);
+  bind('btnGenerateSelectedAgentV2', generateSelectedCodexAgents);
+  bind('btnDownloadSelectedAgentV2', downloadSelectedCodexAgents);
+  bind('btnUploadSelectedAgentSub2V2', uploadSelectedCodexAgentSub2);
   bind('btnRetrySelectedCodexV2', retrySelectedCodex);
   bind('btnDownloadSelectedCpaV2', downloadSelectedCpa);
   bind('btnStopSelectedCodexV2', stopSelectedCodex);
   bind('btnRefreshSelectedChatGPTTokensV2', refreshSelectedChatgptTokens);
   bind('btnSetupSelectedTotpV2', setupSelectedTotp);
   bind('btnChangeSelectedEmailsV2', () => openEmailChangeModal(Array.from(ACCOUNT_SELECTED)));
-  bind('btnRefreshSelectedChatGPTTokensV2', refreshSelectedChatgptTokens);
   bind('btnNoteSelectedAccountsV2', noteSelectedAccounts);
   bind('btnCopySelectedLinesV2', copySelectedAccountLines);
   bind('btnCopySelectedTokensV2', copySelectedAccountTokens);
@@ -5726,7 +5881,7 @@ function _codexUpdateSelectedHint() {
     archiveBtn.textContent = CODEX_SHOW_ARCHIVED ? '恢复选中' : '归档选中';
     archiveBtn.title = CODEX_SHOW_ARCHIVED ? '把选中的归档凭证恢复到默认列表' : '归档选中的 Codex 授权凭证；默认列表不再显示';
   }
-  ['btnCodexDownloadBulkV2', 'btnCodexDownloadBulkCpaV2', 'btnCodexDeleteBulkV2'].forEach(id => {
+  ['btnCodexDownloadBulkV2', 'btnCodexDownloadBulkCpaV2', 'btnCodexUploadBulkCdkV2', 'btnCodexDeleteBulkV2'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = none;
   });
@@ -6016,6 +6171,39 @@ async function codexDownloadBulkCpa() {
     _codexUpdateSelectedHint();
   }
 }
+async function codexUploadBulkToCdkManagement() {
+  if (CODEX_SELECTED.size === 0) return;
+  const filenames = Array.from(CODEX_SELECTED);
+  const note = `将选中 ${filenames.length} 个本地记录按邮箱从 CPA auth-files 拉取真实 Codex JSON，` +
+               `并上传到 CDK 管理端。\n\n` +
+               `CDK 管理端会自动创建记录和 CDK；若该邮箱已有 CPA 记录，则保留原记录和 CDK，不会重复创建。\n` +
+               `上传完成后可在 CDK 管理端继续“转换并上传 sub2api”。\n\n继续？`;
+  if (!confirm(note)) return;
+  const btn = $('#btnCodexUploadBulkCdkV2');
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '上传中…'; }
+  try {
+    const result = await api('/api/codex/upload-bulk-to-cdk-management', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({filenames}),
+    });
+    const completed = Array.isArray(result.completed) ? result.completed : [];
+    completed.forEach(item => CODEX_SELECTED.delete(item.filename));
+    const errors = Array.isArray(result.errors) ? result.errors : [];
+    const summary = `CDK 管理端完成 ${completed.length} 个${errors.length ? `，失败 ${errors.length} 个` : ''}`;
+    const detail = errors.length
+      ? `：${errors.slice(0, 2).map(item => `${item.filename}: ${item.error}`).join('；')}`
+      : '';
+    showToast(summary + detail);
+    if (completed.length) setTimeout(loadCodex, 600);
+  } catch (err) {
+    showToast('上传到 CDK 管理端失败: ' + err.message);
+  } finally {
+    if (btn) btn.textContent = old;
+    _codexUpdateSelectedHint();
+  }
+}
 async function codexDeleteBulk() {
   if (CODEX_SELECTED.size === 0) return;
   const filenames = Array.from(CODEX_SELECTED);
@@ -6063,6 +6251,7 @@ async function codexDeleteBulk() {
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
   bind('btnCodexDownloadBulkV2', codexDownloadBulkLocal);
   bind('btnCodexDownloadBulkCpaV2', codexDownloadBulkCpa);
+  bind('btnCodexUploadBulkCdkV2', codexUploadBulkToCdkManagement);
   bind('btnCodexArchiveBulkV2', codexArchiveSelected);
   bind('btnCodexDeleteBulkV2', codexDeleteBulk);
   document.addEventListener('click', (e) => {
@@ -6119,6 +6308,9 @@ function codexConfigSectionForKey(key) {
   }
   if (key.startsWith('CPA_')) {
     return ['CPA配置', 'CPA 授权链接生成、回调上传和管理接口配置'];
+  }
+  if (key.startsWith('CDK_MGMT_')) {
+    return ['CDK管理端', '批量上传时按邮箱从 CPA 拉取真实授权文件，并自动创建或补全 CDK 管理记录'];
   }
   if (['SUB2API_API_BASE','SUB2API_API_KEY','SUB2API_API_TIMEOUT'].includes(key)) {
     return ['sub2api通用', 'sub2api 共用 API 基址、鉴权和超时配置；Agent Token 和 OAuth 都复用这里'];
@@ -6256,6 +6448,7 @@ function registrationDriverChoices() {
     { value: 'protocol', label: '纯协议注册' },
     { value: 'roxy', label: 'RoxyBrowser' },
     { value: 'cloak', label: '本地指纹浏览器' },
+    { value: 'ant_browser', label: 'Ant Browser' },
     { value: 'browser_use', label: 'browser_use' },
     { value: 'skyvern', label: 'skyvern' },
   ];
@@ -6416,7 +6609,17 @@ function renderConfigPlainFieldV2(f) {
     const shown = isPlaceholderEmpty(fv) ? '' : fv;
     const inputType = f.secret ? 'password' : 'text';
     const ph = f.secret ? '保存在 .env，可留空' : '可留空';
-    control = `<input type="${inputType}" data-key="${attrEsc(f.key)}" value="${attrEsc(shown)}" placeholder="${ph}" autocomplete="off" spellcheck="false">`;
+    if (f.secret) {
+      control = `
+        <div class="config-secret-input">
+          <input type="password" data-key="${attrEsc(f.key)}" value="${attrEsc(shown)}" placeholder="${ph}" autocomplete="off" spellcheck="false">
+          <button type="button" class="config-secret-toggle" data-secret-visibility-toggle aria-label="显示密钥" aria-pressed="false" title="显示密钥">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/><path class="config-secret-eye-slash" d="M4 4l16 16"/></svg>
+          </button>
+        </div>`;
+    } else {
+      control = `<input type="${inputType}" data-key="${attrEsc(f.key)}" value="${attrEsc(shown)}" placeholder="${ph}" autocomplete="off" spellcheck="false">`;
+    }
   }
   const field = `
     <label class="fld">
@@ -6761,7 +6964,7 @@ async function loadCloudMailDomainsV2() {
 
 function renderCodexSectionV2(fields) {
   const slug = configGroupSlug('Codex');
-  const preferred = ['基础配置', 'CPA配置', 'sub2api通用', 'sub2api Agent Token'];
+  const preferred = ['基础配置', 'CPA配置', 'CDK管理端', 'sub2api通用', 'sub2api Agent Token'];
   const bySection = {};
   for (const f of fields) {
     const [section, help] = codexConfigSectionForKey(f.key || '');
@@ -7150,6 +7353,18 @@ function trackConfigFieldChange(e) {
 }
 $('#tab-config').addEventListener('input', trackConfigFieldChange);
 $('#tab-config').addEventListener('change', trackConfigFieldChange);
+$('#tab-config').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-secret-visibility-toggle]');
+  if (!button) return;
+  const input = button.closest('.config-secret-input')?.querySelector('input[data-key]');
+  if (!input) return;
+  const visible = input.type === 'password';
+  input.type = visible ? 'text' : 'password';
+  button.classList.toggle('is-visible', visible);
+  button.setAttribute('aria-pressed', String(visible));
+  button.setAttribute('aria-label', visible ? '隐藏密钥' : '显示密钥');
+  button.title = visible ? '隐藏密钥' : '显示密钥';
+});
 
 async function saveConfigUpdates(triggerBtn) {
   const updates = {...CONFIG_PENDING_UPDATES};

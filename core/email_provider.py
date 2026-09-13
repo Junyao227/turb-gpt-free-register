@@ -84,6 +84,9 @@ def acquire_email() -> str:
     for source in sources:
         try:
             email = _pick_from_source(source)
+            if source == "cloudflare":
+                from core.cf_temp_mail_client import report_mailbox_usage
+                report_mailbox_usage(email, "registering")
             logger.info(f"[EmailProvider] 使用邮箱来源: {source}, email={email}")
             return email
         except Exception as exc:
@@ -122,6 +125,14 @@ def acquire_email_after_input(email: str | None = None) -> str:
         raise RuntimeError("邮箱服务返回了空邮箱地址")
     logger.info("[EmailProvider] 已找到邮箱输入框，开始分配邮箱: %s", allocated)
     return allocated
+
+
+def mark_email_used(email: str, account_id: int | None = None) -> bool:
+    """注册成功后仅回写 Cloudflare 临时邮箱，不影响其他邮箱来源。"""
+    if resolve_email_source(email) != "cloudflare":
+        return False
+    from core.cf_temp_mail_client import report_mailbox_usage
+    return report_mailbox_usage(email, "used", account_id=account_id)
 
 
 def resolve_email_source(email: str) -> str:
@@ -323,7 +334,7 @@ def release_email(email: str, status: str = "available", note: str | None = None
     return source
 
 
-def release_email_if_unconsumed(email: str, note: str | None = None) -> bool:
+def release_email_if_unconsumed(email: str, note: str | None = None, job_id: int | None = None) -> bool:
     """回收仍停留在 used 的任务领取，且绝不覆盖已注册/已判废状态。"""
     if not (email or "").strip():
         return False
@@ -332,13 +343,13 @@ def release_email_if_unconsumed(email: str, note: str | None = None) -> bool:
     from core import db
 
     if source == "outlook":
-        changed = db.release_unconsumed_outlook(email, note=note)
+        changed = db.release_unconsumed_outlook(email, note=note, exclude_job_id=job_id)
     elif source == "generic_api":
-        changed = db.release_unconsumed_generic_api_email(email, note=note)
+        changed = db.release_unconsumed_generic_api_email(email, note=note, exclude_job_id=job_id)
     elif source == "imap":
         changed = db.release_unconsumed_imap_email(email, note=note)
     elif source == "cloudflare_domain":
-        changed = db.release_unconsumed_domain_email(email, note=note)
+        changed = db.release_unconsumed_domain_email(email, note=note, exclude_job_id=job_id)
     else:
         # 临时邮箱不重新进入本地池，只清理进程上下文；已有本地账号时保留上下文。
         if db.get_account_by_email(email) is not None:

@@ -86,7 +86,7 @@ PIX_STATUS_POLL_INTERVAL_SECONDS = 30
 PIX_TERMINAL_DISPLAY_SECONDS = 3
 PIX_QUEUE_LIMIT = 200
 PIX_MONITOR_WORKER_COUNT = 4
-MAX_CHECKOUT_PROXY_ATTEMPTS = 5
+MAX_CHECKOUT_PROXY_ATTEMPTS = max(1, min(50, int(os.getenv("OPENAI_PAY_MAX_CHECKOUT_PROXY_ATTEMPTS", "15") or 15)))
 ZC_PICK_PAGE_SIZE = 500
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
@@ -176,6 +176,71 @@ PROXY_ENV_RUNTIME_NAMES = {
     "OPENAI_PAY_PAYPAL_PROXY": "PAYPAL_STAGE_PROXY",
     "OPENAI_PAY_PAYPAL_PROXY_POOL": "PAYPAL_PROXY_POOL",
 }
+PROXY_STAGE_ORDER = ("checkout", "promotion", "provider", "approve")
+PROXY_STAGE_ENV_SUFFIX = {
+    "checkout": "CHECKOUT",
+    "promotion": "PROMOTION",
+    "provider": "PROVIDER",
+    "approve": "APPROVE",
+}
+PROXY_STAGE_LABELS = {
+    "checkout": "Checkout 创建池",
+    "promotion": "优惠池 / 0 元试用",
+    "provider": "Provider / Stripe 池",
+    "approve": "Approve 授权池",
+}
+PROXY_STAGE_ROLES = {
+    "checkout": "create_checkout",
+    "promotion": "promotion_update",
+    "provider": "stripe_provider",
+    "approve": "chatgpt_checkout_approve",
+}
+PRIMARY_PAYLINK_PROVIDER_TYPES = ("paypal", "upi", "pix", "ideal", "kakao_pay", "gcash")
+PROVIDER_VISIBLE_PROXY_STAGES = {
+    "paypal": ("provider", "promotion"),
+    "upi": ("checkout", "promotion", "provider"),
+    "pix": ("checkout", "promotion", "provider"),
+    "ideal": ("checkout", "promotion", "provider"),
+    "kakao_pay": ("checkout", "promotion", "provider"),
+    "gcash": ("checkout", "promotion", "provider"),
+    "gopay": ("checkout", "promotion", "provider"),
+    "grabpay": ("checkout", "promotion", "provider"),
+}
+PROVIDER_PROXY_STAGE_LABEL_OVERRIDES = {
+    "paypal": {
+        "provider": "主池 / PayPal Checkout",
+        "promotion": "优惠池 / checkout update",
+    },
+}
+PROVIDER_PROXY_STAGE_ROLE_OVERRIDES = {
+    "paypal": {
+        "provider": "checkout_provider_approve",
+    },
+}
+PROVIDER_PROXY_STAGE_SCOPES = {
+    "pix": "PIX",
+    "upi": "INDIA",
+    "korea": "KOREA",
+    "swiss": "SWISS",
+    "ideal": "IDEAL",
+    "gcash": "PH",
+    "gopay": "GOPAY",
+    "grabpay": "GRABPAY",
+}
+PROVIDER_PROXY_STAGE_REGIONS = {
+    "pix": {"checkout": "BR", "promotion": "VN", "provider": "BR", "approve": "BR"},
+    "upi": {"checkout": "IN", "promotion": "VN", "provider": "IN", "approve": "IN"},
+    "korea": {"checkout": "KR", "promotion": "VN", "provider": "KR", "approve": "KR"},
+    "swiss": {"checkout": "CH", "promotion": "VN", "provider": "CH", "approve": "CH"},
+    "ideal": {"checkout": "NL", "promotion": "VN", "provider": "NL", "approve": "NL"},
+    "gcash": {"checkout": "PH", "promotion": "VN", "provider": "PH", "approve": "PH"},
+    "gopay": {"checkout": "ID", "promotion": "VN", "provider": "JP", "approve": "JP"},
+    "grabpay": {"checkout": "PH", "promotion": "VN", "provider": "PH", "approve": "PH"},
+    "paypal": {"checkout": "", "promotion": "VN", "provider": "", "approve": ""},
+}
+PROMOTION_STAGE_REQUIRED_LINK_TYPES = frozenset(
+    {"pix", "korea", "swiss", "ideal", "upi", "gcash", "gopay", "grabpay", "paypal"}
+)
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
@@ -356,6 +421,12 @@ PAYPAL_PROFILE_CHOICES = (
     ("BR", "pt-BR", "Brazil"),
 )
 PAYPAL_PROFILE_DEFAULT_LOCALES = {country: locale for country, locale, _label in PAYPAL_PROFILE_CHOICES}
+PAYPAL_LOCALE_CHOICES = (
+    ("en", "English"),
+    ("th", "Thai"),
+    ("pt-BR", "Português (BR)"),
+)
+PAYPAL_ALLOWED_LOCALES = {locale for locale, _label in PAYPAL_LOCALE_CHOICES}
 QUEUE_PROVIDER_LINK_TYPES = frozenset({"korea", "swiss", "ideal", "upi", "gcash"})
 FATAL_ACCOUNT_ERROR_CODES = {
     "token_invalidated",
@@ -526,12 +597,14 @@ class ProviderProxyUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     provider: str = ""
+    stage: str = "provider"
     fallback_proxy: str | None = Field(None, alias="fallbackProxy")
     proxy_pool: str | None = Field(None, alias="proxyPool")
 
 
 class ProviderProxyTestRequest(BaseModel):
     provider: str = ""
+    stage: str = "provider"
 
 
 class ProviderProfileUpdateRequest(BaseModel):
@@ -1382,10 +1455,10 @@ def paypal_profile(country: str = "", locale: str = "") -> dict[str, str]:
     if not default_locale:
         raise HTTPException(status_code=400, detail=f"unsupported PayPal country profile '{normalized_country}'")
     normalized_locale = str(locale or default_locale).strip()
-    if normalized_locale != default_locale:
+    if normalized_locale not in PAYPAL_ALLOWED_LOCALES:
         raise HTTPException(
             status_code=400,
-            detail=f"unsupported PayPal locale '{normalized_locale}' for country '{normalized_country}'",
+            detail=f"unsupported PayPal locale '{normalized_locale}'",
         )
     return {
         "country": normalized_country,
@@ -1448,6 +1521,255 @@ def provider_proxy_env_keys(provider: str) -> tuple[str, str]:
     return PROVIDER_PROXY_ENV_KEYS[public_type]
 
 
+def normalize_proxy_stage(stage: str = "") -> str:
+    normalized = str(stage or "provider").strip().lower()
+    if normalized not in PROXY_STAGE_ORDER:
+        raise HTTPException(status_code=400, detail=f"unsupported proxy stage '{normalized or '-'}'")
+    return normalized
+
+
+def public_provider_type(provider: str) -> str:
+    public_type = str(provider or "").strip().lower()
+    if public_type in PROVIDERS:
+        return public_type
+    native_type = normalize_link_type(public_type)
+    for candidate, definition in PROVIDERS.items():
+        if definition.native_type == native_type:
+            return candidate
+    raise HTTPException(status_code=400, detail=f"unsupported provider '{public_type or '-'}'")
+
+
+def native_provider_type(provider: str) -> str:
+    public_type = public_provider_type(provider)
+    return PROVIDERS[public_type].native_type
+
+
+def visible_proxy_stage_order(provider: str) -> tuple[str, ...]:
+    public_type = public_provider_type(provider)
+    return PROVIDER_VISIBLE_PROXY_STAGES.get(public_type, PROXY_STAGE_ORDER)
+
+
+def paypal_proxy_stage_prefix(country: str = "") -> str:
+    profile = paypal_profile(country or active_paypal_profile()["country"])
+    if profile["country"] == "US":
+        return "OPENAI_PAY_PAYPAL"
+    return f"OPENAI_PAY_PAYPAL_{profile['country']}"
+
+
+def paypal_stage_country(country: str = "", locale: str = "") -> str:
+    if str(country or "").strip() or str(locale or "").strip():
+        return paypal_profile(country, locale)["country"]
+    return active_paypal_profile()["country"]
+
+
+def proxy_stage_region(provider: str, stage: str, country: str = "", locale: str = "") -> str:
+    public_type = public_provider_type(provider)
+    normalized_stage = normalize_proxy_stage(stage)
+    native_type = PROVIDERS[public_type].native_type
+    if public_type == "paypal":
+        if normalized_stage == "promotion":
+            return PROVIDER_PROXY_STAGE_REGIONS["paypal"]["promotion"]
+        return paypal_stage_country(country, locale)
+    return PROVIDER_PROXY_STAGE_REGIONS.get(native_type, {}).get(normalized_stage, "")
+
+
+def proxy_stage_env_keys(provider: str, stage: str = "provider", country: str = "", locale: str = "") -> tuple[str, str]:
+    public_type = public_provider_type(provider)
+    normalized_stage = normalize_proxy_stage(stage)
+    if normalized_stage == "provider":
+        if public_type == "paypal" and (str(country or "").strip() or str(locale or "").strip()):
+            return paypal_proxy_env_keys_for_country(paypal_profile(country, locale)["country"])
+        return provider_proxy_env_keys(public_type)
+    suffix = PROXY_STAGE_ENV_SUFFIX[normalized_stage]
+    if public_type == "paypal":
+        prefix = paypal_proxy_stage_prefix(paypal_stage_country(country, locale))
+        return f"{prefix}_{suffix}_PROXY", f"{prefix}_{suffix}_PROXY_POOL"
+    native_type = PROVIDERS[public_type].native_type
+    scope = PROVIDER_PROXY_STAGE_SCOPES.get(native_type)
+    if not scope:
+        raise HTTPException(status_code=400, detail=f"provider '{public_type}' has no proxy stage scope")
+    return f"OPENAI_PAY_{scope}_{suffix}_PROXY", f"OPENAI_PAY_{scope}_{suffix}_PROXY_POOL"
+
+
+def proxy_values_from_runtime(fallback_key: str, pool_key: str) -> tuple[list[str], str]:
+    pool_runtime_name = PROXY_ENV_RUNTIME_NAMES.get(pool_key)
+    fallback_runtime_name = PROXY_ENV_RUNTIME_NAMES.get(fallback_key)
+    if pool_runtime_name:
+        pool = list(globals().get(pool_runtime_name) or [])
+    else:
+        pool = parse_proxy_pool(str(os.getenv(pool_key, "") or ""))
+    if fallback_runtime_name:
+        fallback = str(globals().get(fallback_runtime_name) or "").strip()
+    else:
+        fallback = str(os.getenv(fallback_key, "") or "").strip()
+    return pool, fallback
+
+
+def proxy_values_from_env(fallback_key: str, pool_key: str) -> tuple[list[str], str]:
+    return (
+        parse_proxy_pool(str(os.getenv(pool_key, "") or "")),
+        str(os.getenv(fallback_key, "") or "").strip(),
+    )
+
+
+def dedupe_proxy_candidates(pool: list[str], fallback: str = "") -> list[str]:
+    candidates: list[str] = []
+    seen = set()
+    for item in list(pool) + [normalize_proxy_url(fallback)]:
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        candidates.append(value)
+    return candidates
+
+
+def legacy_checkout_proxy_source(public_type: str, country: str = "") -> tuple[list[str], str]:
+    native_type = PROVIDERS[public_type].native_type
+    if native_type == "pix":
+        return PIX_PROXY_POOL or DEFAULT_PROXY_POOL, PIX_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR")
+    if native_type == "korea":
+        return KOREA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "KR"), KOREA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "KR")
+    if native_type == "swiss":
+        return SWISS_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "CH"), SWISS_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "CH")
+    if native_type == "ideal":
+        return (
+            IDEAL_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL"),
+            IDEAL_STAGE_PROXY or proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL"),
+        )
+    if native_type == "upi":
+        return INDIA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "IN"), INDIA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "IN")
+    if native_type == "gcash":
+        return PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"), PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH")
+    if native_type == "grabpay":
+        return grabpay_proxy_source(
+            rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
+            proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
+    if native_type == "paypal":
+        profile_country = paypal_stage_country(country)
+        return paypal_proxy_source(profile_country)
+    wallet_config = wallet_approval_line_config(native_type)
+    if wallet_config:
+        checkout_region = proxy_stage_region(public_type, "checkout") or wallet_config["country"]
+        return (
+            rewrite_proxy_pool_region(GOPAY_PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, checkout_region),
+            proxy_for_region(GOPAY_PROVIDER_STAGE_PROXY or DEFAULT_PROXY, checkout_region),
+        )
+    return DEFAULT_PROXY_POOL, DEFAULT_PROXY
+
+
+def legacy_provider_proxy_source(public_type: str, country: str = "") -> tuple[list[str], str]:
+    native_type = PROVIDERS[public_type].native_type
+    if native_type == "korea":
+        return (
+            KOREA_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "KR"),
+            KOREA_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "KR"),
+        )
+    if native_type == "ideal":
+        return (
+            IDEAL_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL"),
+            IDEAL_STAGE_PROXY or proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL"),
+        )
+    if native_type == "pix":
+        return (
+            PIX_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "BR"),
+            PIX_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR"),
+        )
+    if native_type == "gcash":
+        return (
+            PH_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
+            PH_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
+    if native_type == "grabpay":
+        return grabpay_proxy_source(
+            rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
+            PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
+        )
+    if native_type == "upi":
+        return (
+            INDIA_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "IN"),
+            INDIA_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "IN"),
+        )
+    if native_type == "paypal":
+        profile_country = paypal_stage_country(country)
+        return paypal_proxy_source(profile_country)
+    wallet_config = wallet_approval_line_config(native_type)
+    if wallet_config:
+        return (
+            GOPAY_PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL,
+            GOPAY_PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, wallet_config["proxy_region"]),
+        )
+    return PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US")
+
+
+def promotion_proxy_source(public_type: str, country: str = "") -> tuple[list[str], str]:
+    region = proxy_stage_region(public_type, "promotion", country) or "VN"
+    provider_pool, provider_fallback = legacy_provider_proxy_source(public_type, country)
+    seed_pool = provider_pool or PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL
+    seed_fallback = provider_fallback or PROVIDER_STAGE_PROXY or DEFAULT_PROXY
+    return rewrite_proxy_pool_region(seed_pool, region), proxy_for_region(seed_fallback, region)
+
+
+def proxy_stage_source(provider: str, stage: str = "provider", country: str = "", locale: str = "") -> tuple[list[str], str]:
+    public_type = public_provider_type(provider)
+    normalized_stage = normalize_proxy_stage(stage)
+    fallback_key, pool_key = proxy_stage_env_keys(public_type, normalized_stage, country, locale)
+    configured_pool, configured_fallback = proxy_values_from_runtime(fallback_key, pool_key)
+    if configured_pool or configured_fallback:
+        return configured_pool, configured_fallback
+    if normalized_stage == "checkout":
+        return legacy_checkout_proxy_source(public_type, country)
+    if normalized_stage == "promotion":
+        return promotion_proxy_source(public_type, country)
+    if normalized_stage == "approve":
+        return legacy_provider_proxy_source(public_type, country)
+    return legacy_provider_proxy_source(public_type, country)
+
+
+def proxy_stage_has_config(provider: str, stage: str = "provider", country: str = "", locale: str = "") -> bool:
+    fallback_key, pool_key = proxy_stage_env_keys(provider, stage, country, locale)
+    pool, fallback = proxy_values_from_runtime(fallback_key, pool_key)
+    return bool(pool or fallback)
+
+
+def proxy_stage_candidates(
+    provider: str,
+    stage: str = "provider",
+    *,
+    explicit_proxy: str = "",
+    country: str = "",
+    locale: str = "",
+) -> list[str]:
+    public_type = public_provider_type(provider)
+    native_type = PROVIDERS[public_type].native_type
+    explicit = explicit_proxy_for_link_type(explicit_proxy, native_type)
+    if explicit:
+        return [explicit]
+    pool, fallback = proxy_stage_source(public_type, stage, country, locale)
+    return dedupe_proxy_candidates(pool, fallback)
+
+
+def next_proxy_for_stage(
+    provider: str,
+    stage: str = "provider",
+    *,
+    explicit_proxy: str = "",
+    country: str = "",
+    locale: str = "",
+    fallback_proxy: str = "",
+) -> str:
+    public_type = public_provider_type(provider)
+    normalized_stage = normalize_proxy_stage(stage)
+    pool, fallback = proxy_stage_source(public_type, normalized_stage, country, locale)
+    if fallback_proxy and not fallback:
+        fallback = fallback_proxy
+    explicit = explicit_proxy_for_link_type(explicit_proxy, PROVIDERS[public_type].native_type)
+    if explicit:
+        return explicit
+    return next_proxy(f"{public_type}:{normalized_stage}:{country or '-'}", pool, fallback)
+
+
 def validate_proxy_value(value: str) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -1473,16 +1795,25 @@ def normalize_proxy_pool_value(value: str) -> list[str]:
     return [validate_proxy_value(item) for item in parts if str(item).strip()]
 
 
-def proxy_config_view(provider: str) -> dict[str, Any]:
-    public_type = str(provider or "").strip().lower()
-    fallback_key, pool_key = provider_proxy_env_keys(public_type)
-    fallback_value = str(os.getenv(fallback_key, "") or "").strip()
-    pool_values = parse_proxy_pool(str(os.getenv(pool_key, "") or ""))
-    definition = PROVIDERS[public_type]
-    view = {
-        "provider": public_type,
-        "native_type": definition.native_type,
-        "display_name": definition.display_name,
+def proxy_stage_config_view(provider: str, stage: str) -> dict[str, Any]:
+    public_type = public_provider_type(provider)
+    normalized_stage = normalize_proxy_stage(stage)
+    fallback_key, pool_key = proxy_stage_env_keys(public_type, normalized_stage)
+    pool_values, fallback_value = proxy_values_from_env(fallback_key, pool_key)
+    region = proxy_stage_region(public_type, normalized_stage)
+    label = PROVIDER_PROXY_STAGE_LABEL_OVERRIDES.get(public_type, {}).get(
+        normalized_stage,
+        PROXY_STAGE_LABELS[normalized_stage],
+    )
+    role = PROVIDER_PROXY_STAGE_ROLE_OVERRIDES.get(public_type, {}).get(
+        normalized_stage,
+        PROXY_STAGE_ROLES[normalized_stage],
+    )
+    return {
+        "stage": normalized_stage,
+        "label": label,
+        "role": role,
+        "region": region,
         "fallback": {
             "env_key": fallback_key,
             "configured": bool(fallback_value),
@@ -1494,6 +1825,23 @@ def proxy_config_view(provider: str) -> dict[str, Any]:
             "count": len(pool_values),
             "masked_values": ["configured"] * min(len(pool_values), 10),
         },
+    }
+
+
+def proxy_config_view(provider: str) -> dict[str, Any]:
+    public_type = public_provider_type(provider)
+    definition = PROVIDERS[public_type]
+    stage_views = [proxy_stage_config_view(public_type, stage) for stage in PROXY_STAGE_ORDER]
+    visible_stage_views = [proxy_stage_config_view(public_type, stage) for stage in visible_proxy_stage_order(public_type)]
+    provider_stage = next(item for item in stage_views if item["stage"] == "provider")
+    view = {
+        "provider": public_type,
+        "native_type": definition.native_type,
+        "display_name": definition.display_name,
+        "stages": stage_views,
+        "visible_stages": visible_stage_views,
+        "fallback": provider_stage["fallback"],
+        "pool": provider_stage["pool"],
     }
     if public_type == "paypal":
         view["profile"] = paypal_proxy_config_view()
@@ -1568,6 +1916,10 @@ def provider_profile_config_view(provider: str) -> dict[str, Any]:
             {"country": country, "locale": locale, "label": label, "currency": currency_for_country(country)}
             for country, locale, label in PAYPAL_PROFILE_CHOICES
         ],
+        "locale_choices": [
+            {"locale": locale, "label": label}
+            for locale, label in PAYPAL_LOCALE_CHOICES
+        ],
     }
 
 
@@ -1590,8 +1942,9 @@ def update_provider_profile_config(request: ProviderProfileUpdateRequest) -> dic
 
 
 def update_provider_proxy_config(request: ProviderProxyUpdateRequest) -> dict[str, Any]:
-    public_type = str(request.provider or "").strip().lower()
-    fallback_key, pool_key = provider_proxy_env_keys(public_type)
+    public_type = public_provider_type(request.provider)
+    stage = normalize_proxy_stage(request.stage)
+    fallback_key, pool_key = proxy_stage_env_keys(public_type, stage)
     values: dict[str, str] = {}
     if request.fallback_proxy is not None:
         values[fallback_key] = validate_proxy_value(request.fallback_proxy)
@@ -1601,13 +1954,14 @@ def update_provider_proxy_config(request: ProviderProxyUpdateRequest) -> dict[st
         raise HTTPException(status_code=400, detail="select at least one proxy setting to update")
     write_paylink_env_values(values)
     apply_proxy_config_runtime(values)
-    log_event("config.proxy.save", "provider proxy configuration saved", status=public_type)
+    log_event("config.proxy.save", "provider proxy configuration saved", status=f"{public_type}:{stage}")
     return {"ok": True, "config": proxy_config_view(public_type)}
 
 
-def provider_proxy_connectivity_test(provider: str) -> dict[str, Any]:
-    public_type = str(provider or "").strip().lower()
-    fallback_key, pool_key = provider_proxy_env_keys(public_type)
+def provider_proxy_connectivity_test(provider: str, stage: str = "provider") -> dict[str, Any]:
+    public_type = public_provider_type(provider)
+    normalized_stage = normalize_proxy_stage(stage)
+    fallback_key, pool_key = proxy_stage_env_keys(public_type, normalized_stage)
     fallback = validate_proxy_value(str(os.getenv(fallback_key, "") or ""))
     pool = [validate_proxy_value(value) for value in parse_proxy_pool(str(os.getenv(pool_key, "") or ""))]
     candidates: list[str] = []
@@ -1631,145 +1985,56 @@ def provider_proxy_connectivity_test(provider: str) -> dict[str, Any]:
     finally:
         session.close()
     duration_ms = int((time.monotonic() - started_at) * 1000)
-    log_event("config.proxy.test", "provider proxy connectivity checked", status=f"{public_type}:{'ok' if ok else 'failed'}")
-    return {"ok": ok, "provider": public_type, "duration_ms": duration_ms, "message": message}
+    log_event(
+        "config.proxy.test",
+        "provider proxy connectivity checked",
+        status=f"{public_type}:{normalized_stage}:{'ok' if ok else 'failed'}",
+    )
+    return {"ok": ok, "provider": public_type, "stage": normalized_stage, "duration_ms": duration_ms, "message": message}
 
 
 def effective_default_proxy(proxy: str = "", link_type: str = "") -> str:
-    explicit = explicit_proxy_for_link_type(proxy, link_type)
-    if explicit:
-        return explicit
     normalized_link_type = normalize_link_type(link_type)
-    if normalized_link_type == "pix":
-        return next_proxy("pix", PIX_PROXY_POOL or DEFAULT_PROXY_POOL, PIX_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR"))
-    if normalized_link_type == "gcash":
-        return next_proxy(
-            "gcash",
-            PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
-            PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
-        )
-    if normalized_link_type == "grabpay":
-        pool, fallback = grabpay_proxy_source(
-            rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
-            proxy_for_region(DEFAULT_PROXY, "PH"),
-        )
-        return next_proxy("grabpay", pool, fallback)
-    if normalized_link_type == "paypal":
-        profile = active_paypal_profile()
-        pool, fallback = paypal_proxy_source(profile["country"])
-        return next_proxy(f"paypal:{profile['country']}", pool, fallback)
-    wallet_config = wallet_approval_line_config(normalized_link_type)
-    if wallet_config:
-        return next_proxy(
-            normalized_link_type,
-            GOPAY_PROVIDER_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, wallet_config["proxy_region"]),
-            GOPAY_PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, wallet_config["proxy_region"]),
-        )
-    if normalized_link_type == "korea":
-        return next_proxy(
-            "korea",
-            KOREA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "KR"),
-            KOREA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "KR"),
-        )
-    if normalized_link_type == "swiss":
-        return next_proxy(
-            "swiss",
-            SWISS_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "CH"),
-            SWISS_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "CH"),
-        )
-    if normalized_link_type == "ideal":
-        return next_proxy(
-            "ideal",
-            IDEAL_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "NL"),
-            IDEAL_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "NL"),
-        )
-    if normalized_link_type == "upi":
-        return next_proxy(
-            "upi",
-            INDIA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "IN"),
-            INDIA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "IN"),
-        )
-    return next_proxy("default", DEFAULT_PROXY_POOL, DEFAULT_PROXY)
+    if normalized_link_type == "hosted":
+        explicit = explicit_proxy_for_link_type(proxy, normalized_link_type)
+        if explicit:
+            return explicit
+        return next_proxy("default", DEFAULT_PROXY_POOL, DEFAULT_PROXY)
+    return next_proxy_for_stage(link_type, "checkout", explicit_proxy=proxy)
 
 
 def proxy_candidates_for_link_type(proxy: str = "", link_type: str = "") -> list[str]:
     normalized_link_type = normalize_link_type(link_type)
-    explicit = explicit_proxy_for_link_type(proxy, normalized_link_type)
-    if explicit:
-        return [explicit]
-    if normalized_link_type == "pix":
-        pool = PIX_PROXY_POOL or DEFAULT_PROXY_POOL
-        fallback = PIX_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR")
-    elif normalized_link_type == "korea":
-        pool = KOREA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "KR")
-        fallback = KOREA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "KR")
-    elif normalized_link_type == "swiss":
-        pool = SWISS_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "CH")
-        fallback = SWISS_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "CH")
-    elif normalized_link_type == "ideal":
-        pool = IDEAL_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL")
-        fallback = IDEAL_STAGE_PROXY or proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL")
-    elif normalized_link_type == "upi":
-        pool = INDIA_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "IN")
-        fallback = INDIA_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "IN")
-    elif normalized_link_type == "gcash":
-        pool = PH_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH")
-        fallback = PH_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH")
-    elif normalized_link_type == "grabpay":
-        pool, fallback = grabpay_proxy_source(
-            rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, "PH"),
-            proxy_for_region(DEFAULT_PROXY, "PH"),
-        )
-    elif normalized_link_type == "paypal":
-        profile = active_paypal_profile()
-        pool, fallback = paypal_proxy_source(profile["country"])
-    elif wallet_approval_line_config(normalized_link_type):
-        wallet_config = wallet_approval_line_config(normalized_link_type)
-        pool = GOPAY_PROVIDER_PROXY_POOL or rewrite_proxy_pool_region(DEFAULT_PROXY_POOL, wallet_config["proxy_region"])
-        fallback = GOPAY_PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, wallet_config["proxy_region"])
-    else:
-        pool = PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL
-        fallback = PROVIDER_STAGE_PROXY or DEFAULT_PROXY
-
-    candidates: list[str] = []
-    seen = set()
-    for item in list(pool) + [normalize_proxy_url(fallback)]:
-        value = str(item or "").strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        candidates.append(value)
-    return candidates
+    if normalized_link_type == "hosted":
+        explicit = explicit_proxy_for_link_type(proxy, normalized_link_type)
+        if explicit:
+            return [explicit]
+        return dedupe_proxy_candidates(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, PROVIDER_STAGE_PROXY or DEFAULT_PROXY)
+    return proxy_stage_candidates(link_type, "checkout", explicit_proxy=proxy)
 
 
 def proxy_candidates_for_request(req: LongLinkRequest) -> list[str]:
-    normalized_link_type = normalize_link_type(req.link_type)
-    if normalized_link_type != "paypal":
+    if normalize_link_type(req.link_type) == "hosted":
         return proxy_candidates_for_link_type(req.proxy, req.link_type)
-    explicit = explicit_proxy_for_link_type(req.proxy, normalized_link_type)
-    if explicit:
-        return [explicit]
-    profile = paypal_profile(req.billing_country, req.payment_locale)
-    pool, fallback = paypal_proxy_source(profile["country"])
-    candidates: list[str] = []
-    seen = set()
-    for item in [*pool, normalize_proxy_url(fallback)]:
-        value = str(item or "").strip()
-        if value and value not in seen:
-            seen.add(value)
-            candidates.append(value)
-    return candidates
+    return proxy_stage_candidates(
+        req.link_type,
+        "checkout",
+        explicit_proxy=req.proxy,
+        country=req.billing_country,
+        locale=req.payment_locale,
+    )
 
 
 def effective_default_proxy_for_request(req: LongLinkRequest) -> str:
-    if normalize_link_type(req.link_type) != "paypal":
+    if normalize_link_type(req.link_type) == "hosted":
         return effective_default_proxy(req.proxy, req.link_type)
-    explicit = explicit_proxy_for_link_type(req.proxy, req.link_type)
-    if explicit:
-        return explicit
-    profile = paypal_profile(req.billing_country, req.payment_locale)
-    pool, fallback = paypal_proxy_source(profile["country"])
-    return next_proxy(f"paypal:{profile['country']}", pool, fallback)
+    return next_proxy_for_stage(
+        req.link_type,
+        "checkout",
+        explicit_proxy=req.proxy,
+        country=req.billing_country,
+        locale=req.payment_locale,
+    )
 
 
 def set_proxy_url(session: Any, proxy: str) -> None:
@@ -1839,63 +2104,50 @@ def create_zc_service_token(secret: str, expire_seconds: int = 86400 * 7) -> str
 def proxy_for_region(proxy: str, region: str) -> str:
     proxy = str(proxy or "").strip()
     region = str(region or "").strip().upper()
-    if proxy and region and "region-" in proxy:
-        return re.sub(r"region-[A-Za-z]{2}", f"region-{region}", proxy)
+    if not proxy or not region:
+        return proxy
+    if "region-" in proxy:
+        proxy = re.sub(r"region-[A-Za-z]{2}", f"region-{region}", proxy)
+    if "country-" in proxy:
+        proxy = re.sub(r"country-[A-Za-z]{2}", f"country-{region}", proxy)
+    proxy = re.sub(
+        r"-(BR|CH|ID|IN|JP|KR|NL|PH|TH|TR|US|VN)-(?=[A-Za-z0-9])",
+        f"-{region}-",
+        proxy,
+        count=1,
+    )
     return proxy
 
 
 def provider_stage_proxy(req: LongLinkRequest) -> str:
-    normalized_link_type = normalize_link_type(req.link_type)
-    explicit = explicit_proxy_for_link_type(req.proxy, normalized_link_type)
-    if explicit:
-        return explicit
-    if normalized_link_type == "korea":
-        return next_proxy(
-            "korea",
-            KOREA_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "KR"),
-            KOREA_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "KR"),
-        )
-    if normalized_link_type == "ideal":
-        return next_proxy(
-            "ideal",
-            IDEAL_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "NL"),
-            IDEAL_STAGE_PROXY or proxy_for_region(PROVIDER_STAGE_PROXY or DEFAULT_PROXY, "NL"),
-        )
-    if normalized_link_type == "pix":
-        return next_proxy(
-            "pix",
-            PIX_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "BR"),
-            PIX_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "BR"),
-        )
-    if normalized_link_type == "gcash":
-        return next_proxy(
-            "gcash",
-            PH_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
-            PH_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
-        )
-    if normalized_link_type == "grabpay":
-        pool, fallback = grabpay_proxy_source(
-            rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "PH"),
-            PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "PH"),
-        )
-        return next_proxy("grabpay", pool, fallback)
-    wallet_config = wallet_approval_line_config(req.link_type)
-    if wallet_config:
-        return next_proxy(
-            normalize_link_type(req.link_type),
-            GOPAY_PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL,
-            GOPAY_PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, wallet_config["proxy_region"]),
-        )
-    if normalized_link_type == "upi":
-        return next_proxy(
-            "upi",
-            INDIA_PROXY_POOL or rewrite_proxy_pool_region(PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL, "IN"),
-            INDIA_STAGE_PROXY or PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "IN"),
-        )
-    return next_proxy(
+    return next_proxy_for_stage(
+        req.link_type,
         "provider",
-        PROVIDER_PROXY_POOL or DEFAULT_PROXY_POOL,
-        PROVIDER_STAGE_PROXY or proxy_for_region(DEFAULT_PROXY, "US"),
+        explicit_proxy=req.proxy,
+        country=req.billing_country,
+        locale=req.payment_locale,
+    )
+
+
+def promotion_stage_proxy(req: LongLinkRequest, fallback_proxy: str = "") -> str:
+    return next_proxy_for_stage(
+        req.link_type,
+        "promotion",
+        explicit_proxy=req.proxy,
+        country=req.billing_country,
+        locale=req.payment_locale,
+        fallback_proxy=fallback_proxy,
+    )
+
+
+def approve_stage_proxy(req: LongLinkRequest, fallback_proxy: str = "") -> str:
+    return next_proxy_for_stage(
+        req.link_type,
+        "approve",
+        explicit_proxy=req.proxy,
+        country=req.billing_country,
+        locale=req.payment_locale,
+        fallback_proxy=fallback_proxy,
     )
 
 
@@ -2669,7 +2921,7 @@ def detect_fatal_account_error(exc: Exception) -> str:
 def should_include_initial_checkout_promo(req: LongLinkRequest, link_type: str) -> bool:
     if not req.use_promo_params:
         return False
-    if link_type in {"korea", "pix"}:
+    if normalize_link_type(link_type) in PROMOTION_STAGE_REQUIRED_LINK_TYPES:
         return False
     return True
 
@@ -2882,35 +3134,89 @@ def pix_checkout_email(claimed_account: dict[str, Any] | None) -> str:
     return PIX_BILLING_EMAIL
 
 
-def pix_promotion_proxy(provider_proxy: str) -> str:
-    configured = next_proxy(
-        "pix_promotion",
-        PIX_PROMOTION_PROXY_POOL,
-        PIX_PROMOTION_STAGE_PROXY,
-    )
+def checkout_promo_id(req: LongLinkRequest) -> str:
+    return str(getattr(req, "promo_id", "") or PIX_PROMO_ID).strip() or PIX_PROMO_ID
+
+
+def pix_promotion_proxy(provider_proxy: str, req: LongLinkRequest | None = None) -> str:
+    if req is not None:
+        return promotion_stage_proxy(req, provider_proxy)
+    configured = next_proxy("pix_promotion", PIX_PROMOTION_PROXY_POOL, PIX_PROMOTION_STAGE_PROXY)
     if configured:
         return configured
     seed = normalize_proxy_url(provider_proxy) or proxy_for_region(DEFAULT_PROXY, "BR")
     return proxy_for_region(seed, PIX_PROMOTION_REGION)
 
 
-def update_pix_checkout_promotion(chatgpt: Any, checkout: dict[str, Any], proxy: str) -> None:
+def update_checkout_promotion(
+    chatgpt: Any,
+    checkout: dict[str, Any],
+    req: LongLinkRequest,
+    proxy: str,
+    *,
+    label: str = "",
+) -> dict[str, Any]:
     set_proxy_url(chatgpt, proxy)
     path = "/backend-api/payments/checkout/update"
+    link_type = normalize_link_type(req.link_type)
+    stage_label = label or link_type
     body = {
         "checkout_session_id": checkout["cs_id"],
         "processor_entity": checkout["processor_entity"],
         "plan_name": "chatgptplusplan",
         "price_interval": "month",
         "seat_quantity": 1,
-        "promo_campaign": {"promo_campaign_id": PIX_PROMO_ID, "is_coupon_from_query_param": False},
+        "promo_campaign": {"promo_campaign_id": checkout_promo_id(req), "is_coupon_from_query_param": False},
     }
     response = chatgpt.post("https://chatgpt.com" + path, json=body, headers=checkout_update_headers(path, checkout), timeout=DEFAULT_TIMEOUT)
     if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=f"pix checkout update failed: {response.text[:500]}")
-    payload = response.json() or {}
+        detail = checkout_error_response_summary(response, str(getattr(response, "text", "") or ""))
+        raise HTTPException(status_code=response.status_code, detail=f"{stage_label} checkout promotion failed: {detail}")
+    try:
+        payload = response.json() or {}
+    except Exception:
+        payload = {}
     if payload.get("success") is False:
-        raise HTTPException(status_code=409, detail=f"pix checkout promotion rejected: {payload}")
+        detail = redact_text(event_field_text(payload, limit=500))
+        raise HTTPException(status_code=409, detail=f"{stage_label} checkout promotion rejected: {detail}")
+    return payload
+
+
+def update_pix_checkout_promotion(chatgpt: Any, checkout: dict[str, Any], req: LongLinkRequest, proxy: str) -> dict[str, Any]:
+    return update_checkout_promotion(chatgpt, checkout, req, proxy, label="pix")
+
+
+def sync_checkout_promotion_if_needed(
+    chatgpt: Any,
+    checkout: dict[str, Any],
+    req: LongLinkRequest,
+    provider_proxy: str,
+    job_id: str,
+) -> dict[str, Any]:
+    link_type = normalize_link_type(req.link_type)
+    if not req.use_promo_params or link_type not in PROMOTION_STAGE_REQUIRED_LINK_TYPES or link_type == "pix":
+        return {}
+    promo_proxy = promotion_stage_proxy(req, provider_proxy)
+    checkout_region = proxy_stage_region(req.link_type, "checkout", req.billing_country, req.payment_locale) or "-"
+    provider_region = proxy_stage_region(req.link_type, "provider", req.billing_country, req.payment_locale) or "-"
+    promotion_region = proxy_stage_region(req.link_type, "promotion", req.billing_country, req.payment_locale) or "-"
+    log_event(
+        f"{link_type}.proxy_chain",
+        f"{checkout_region} checkout -> {promotion_region} checkout/update promotion -> {provider_region} provider/approve",
+        job_id=job_id,
+        status="active",
+    )
+    payload = update_checkout_promotion(chatgpt, checkout, req, promo_proxy, label=link_type)
+    log_event(
+        f"{link_type}.promotion",
+        f"{promotion_region} checkout/update ok promo={checkout_promo_id(req)}",
+        job_id=job_id,
+        status="ok",
+        cs_id=checkout["cs_id"],
+    )
+    if provider_proxy:
+        apply_provider_proxy(chatgpt, provider_proxy)
+    return payload
 
 
 def update_pix_checkout_taxes_br(chatgpt: Any, checkout: dict[str, Any], email: str, proxy: str) -> None:
@@ -2965,10 +3271,10 @@ def sync_pix_promotion_and_br_taxes(
     claimed_account: dict[str, Any] | None,
     job_id: str,
 ) -> None:
-    vn_proxy = pix_promotion_proxy(provider_proxy)
+    vn_proxy = pix_promotion_proxy(provider_proxy, req)
     log_event("pix.proxy_chain", "BR checkout/init -> VN checkout/update promotion -> VN tax calls with BR country -> BR final Stripe init", job_id=job_id, status="active")
-    update_pix_checkout_promotion(chatgpt, checkout, vn_proxy)
-    log_event("pix.promotion", f"VN checkout/update ok promo={PIX_PROMO_ID}", job_id=job_id, status="ok", cs_id=checkout["cs_id"])
+    update_pix_checkout_promotion(chatgpt, checkout, req, vn_proxy)
+    log_event("pix.promotion", f"VN checkout/update ok promo={checkout_promo_id(req)}", job_id=job_id, status="ok", cs_id=checkout["cs_id"])
     email = pix_checkout_email(claimed_account)
     update_pix_checkout_taxes_br(chatgpt, checkout, email, vn_proxy)
     log_event("pix.chatgpt_taxes", "BR ChatGPT taxes country=BR", job_id=job_id, status="ok", cs_id=checkout["cs_id"])
@@ -4562,7 +4868,14 @@ def build_redirect_provider_fields(pm_id: str, stripe_redirect_url: str, provide
     }
 
 
+def apply_approve_proxy_if_configured(deps: dict[str, Any]) -> None:
+    approve_proxy = str(deps.get("approve_proxy") or "").strip()
+    if approve_proxy:
+        apply_provider_proxy(deps["chatgpt"], approve_proxy)
+
+
 def resolve_pix_provider_fields(state: dict[str, Any], checkout: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
+    apply_approve_proxy_if_configured(deps)
     pix_details = pix_details_after_confirm(
         deps["chatgpt"],
         deps["stripe"],
@@ -4576,6 +4889,7 @@ def resolve_pix_provider_fields(state: dict[str, Any], checkout: dict[str, Any],
 
 
 def resolve_upi_provider_fields(state: dict[str, Any], checkout: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
+    apply_approve_proxy_if_configured(deps)
     upi_details = upi_details_after_confirm(
         deps["chatgpt"],
         deps["stripe"],
@@ -4592,6 +4906,7 @@ def resolve_upi_provider_fields(state: dict[str, Any], checkout: dict[str, Any],
 
 
 def resolve_redirect_provider_fields(state: dict[str, Any], checkout: dict[str, Any], deps: dict[str, Any]) -> dict[str, Any]:
+    apply_approve_proxy_if_configured(deps)
     stripe_redirect_url = redirect_url_after_confirm(
         deps["chatgpt"],
         deps["stripe"],
@@ -4613,6 +4928,7 @@ def resolve_gopay_approval_fields(state: dict[str, Any], checkout: dict[str, Any
     submission_state = str((submission or {}).get("state") or "").strip()
     stripe_redirect_url = ""
     if submission_state == "requires_approval":
+        apply_approve_proxy_if_configured(deps)
         log_protocol_capture(
             "protocol.approval_gate",
             "submission requires approval",
@@ -4640,6 +4956,7 @@ def resolve_gopay_approval_fields(state: dict[str, Any], checkout: dict[str, Any
             timeout_seconds=90,
         )
     else:
+        apply_approve_proxy_if_configured(deps)
         stripe_redirect_url = redirect_url_after_confirm(
             deps["chatgpt"],
             deps["stripe"],
@@ -4702,7 +5019,12 @@ def create_provider_link(
             "stripe_pk": stripe_pk,
         },
     )
-    deps = {"chatgpt": chatgpt, "req": req, "stripe": stripe}
+    deps = {
+        "approve_proxy": approve_stage_proxy(req, fallback_proxy=provider_proxy),
+        "chatgpt": chatgpt,
+        "req": req,
+        "stripe": stripe,
+    }
     if link_type == "pix":
         return resolve_pix_provider_fields(state, checkout, deps)
     if link_type == "upi":
@@ -5282,7 +5604,7 @@ def save_provider_proxy_config(request: Request, payload: ProviderProxyUpdateReq
 @app.post("/api/config/proxy/test")
 def test_provider_proxy_config(request: Request, payload: ProviderProxyTestRequest) -> dict[str, Any]:
     require_api_scope(request, ADMIN_SCOPE, ZC_DEFAULT_JWT_SECRET)
-    return provider_proxy_connectivity_test(payload.provider)
+    return provider_proxy_connectivity_test(payload.provider, payload.stage)
 
 
 @app.get("/api/config/provider")
@@ -5468,6 +5790,28 @@ def generate_long_link_core(req: LongLinkRequest) -> LongLinkResponse:
             if not checkout_short_url:
                 raise HTTPException(status_code=502, detail="checkout response missing short link")
 
+            provider_proxy = ""
+            if link_type in PROMOTION_STAGE_REQUIRED_LINK_TYPES:
+                paypal_promotion_enabled = link_type == "paypal" and proxy_stage_has_config(
+                    req.link_type,
+                    "promotion",
+                    req.billing_country,
+                    req.payment_locale,
+                )
+                if link_type != "paypal" or paypal_promotion_enabled:
+                    provider_proxy = (
+                        next_proxy_for_stage(
+                            req.link_type,
+                            "provider",
+                            explicit_proxy=req.proxy,
+                            country=req.billing_country,
+                            locale=req.payment_locale,
+                        )
+                        if link_type == "paypal"
+                        else provider_stage_proxy(req)
+                    )
+                    sync_checkout_promotion_if_needed(chatgpt, checkout, req, provider_proxy, job_id)
+
             provider_fields: dict[str, Any] = {
                 "payment_method_id": "",
                 "stripe_redirect_url": "",
@@ -5482,7 +5826,7 @@ def generate_long_link_core(req: LongLinkRequest) -> LongLinkResponse:
             payment_method_type = payment_method_type_for_link_type(link_type)
             stripe_hosted_url = ""
             if link_type in {"korea", "swiss", "ideal", "upi", "gopay", "gcash", "grabpay"}:
-                provider_proxy = provider_stage_proxy(req)
+                provider_proxy = provider_proxy or provider_stage_proxy(req)
                 if provider_proxy:
                     apply_provider_proxy(chatgpt, provider_proxy)
                 if str(checkout.get("publishable_key") or "").strip():

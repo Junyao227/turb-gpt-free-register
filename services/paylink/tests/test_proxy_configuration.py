@@ -69,6 +69,9 @@ def test_proxy_config_view_maps_us_paypal_to_legacy_dedicated_settings(monkeypat
     assert view["fallback"]["env_key"] == "OPENAI_PAY_PAYPAL_PROXY"
     assert view["pool"]["env_key"] == "OPENAI_PAY_PAYPAL_PROXY_POOL"
     assert view["pool"]["count"] == 1
+    assert [item["stage"] for item in view["visible_stages"]] == ["provider", "promotion"]
+    assert view["visible_stages"][0]["label"] == "主池 / PayPal Checkout"
+    assert view["visible_stages"][0]["role"] == "checkout_provider_approve"
     assert view["profile"] == {
         "country": "US",
         "locale": "en",
@@ -78,6 +81,8 @@ def test_proxy_config_view_maps_us_paypal_to_legacy_dedicated_settings(monkeypat
     }
     assert "fixture-user" not in serialized
     assert "proxy.example.test" not in serialized
+    profile_view = app.provider_profile_config_view("paypal")
+    assert [item["locale"] for item in profile_view["locale_choices"]] == ["en", "th", "pt-BR"]
 
 
 @pytest.mark.parametrize(
@@ -101,6 +106,8 @@ def test_proxy_config_view_uses_active_regional_paypal_settings(monkeypatch, tmp
     assert view["profile"]["country"] == country
     assert view["profile"]["locale"] == locale
     assert view["profile"]["currency"] == currency
+    assert [item["stage"] for item in view["visible_stages"]] == ["provider", "promotion"]
+    assert view["visible_stages"][0]["fallback"]["env_key"] == fallback_key
     assert "fixture-user" not in serialized
     assert "legacy-user" not in serialized
     assert "proxy.example.test" not in serialized
@@ -194,17 +201,17 @@ def test_paypal_profile_update_preserves_unrelated_ini_content_and_switches_prox
     monkeypatch.setenv("OPENAI_PAY_PAYPAL_TH_PROXY_POOL", FIXTURE_PROXY_TWO)
 
     result = app.update_provider_profile_config(
-        app.ProviderProfileUpdateRequest(provider="paypal", country="TH")
+        app.ProviderProfileUpdateRequest(provider="paypal", country="TH", locale="en")
     )
     content = config_path.read_text(encoding="utf-8")
 
     assert result["config"]["country"] == "TH"
-    assert result["config"]["locale"] == "th"
+    assert result["config"]["locale"] == "en"
     assert "# retained top-level comment" in content
     assert "custom_option = retain-me" in content
     assert "[providers.other]" in content
     assert "country = TH" in content
-    assert "locale = th" in content
+    assert "locale = en" in content
     assert app.proxy_config_view("paypal")["fallback"]["env_key"] == "OPENAI_PAY_PAYPAL_TH_PROXY"
     assert not list(tmp_path.glob(".providers-*.tmp"))
 
@@ -216,7 +223,7 @@ def test_paypal_profile_validation_does_not_change_ini(monkeypatch, tmp_path):
 
     with pytest.raises(app.HTTPException, match="unsupported PayPal locale") as exc:
         app.update_provider_profile_config(
-            app.ProviderProfileUpdateRequest(provider="paypal", country="BR", locale="th")
+            app.ProviderProfileUpdateRequest(provider="paypal", country="BR", locale="ja")
         )
 
     assert exc.value.status_code == 400
@@ -370,3 +377,142 @@ def test_dedicated_us_paypal_proxy_pool_has_precedence_over_generic_checkout_can
 
     assert candidates[0] == paypal_proxy
     assert generic_proxy in candidates[1:]
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected_stages"),
+    (
+        ("paypal", ("provider", "promotion")),
+        ("upi", ("checkout", "promotion", "provider")),
+        ("pix", ("checkout", "promotion", "provider")),
+        ("ideal", ("checkout", "promotion", "provider")),
+        ("kakao_pay", ("checkout", "promotion", "provider")),
+        ("gcash", ("checkout", "promotion", "provider")),
+        ("gopay", ("checkout", "promotion", "provider")),
+        ("grabpay", ("checkout", "promotion", "provider")),
+    ),
+)
+def test_primary_provider_visible_proxy_stages_follow_fixed_reference_contracts(
+    monkeypatch,
+    tmp_path,
+    provider,
+    expected_stages,
+):
+    if provider == "paypal":
+        configure_paypal_profile(monkeypatch, tmp_path)
+
+    view = app.proxy_config_view(provider)
+
+    assert tuple(item["stage"] for item in view["visible_stages"]) == expected_stages
+    assert all(item["stage"] != "approve" for item in view["visible_stages"])
+    if provider == "paypal":
+        assert [item["label"] for item in view["visible_stages"]] == [
+            "主池 / PayPal Checkout",
+            "优惠池 / checkout update",
+        ]
+    else:
+        assert any(item["role"] == "promotion_update" for item in view["visible_stages"])
+
+
+def test_proxy_region_rewrite_supports_live_provider_formats():
+    assert (
+        app.proxy_for_region(
+            "http://fixture-user-region-JP-sid-demo-t-5:fixture-pass@proxy.example.test:443",
+            "ID",
+        )
+        == "http://fixture-user-region-ID-sid-demo-t-5:fixture-pass@proxy.example.test:443"
+    )
+    assert (
+        app.proxy_for_region(
+            "http://bunnyVgvhjyJ9-country-KR-session-976056793-sessTime-5:98963225@proxy.us.bunnyproxy.com:18080",
+            "ID",
+        )
+        == "http://bunnyVgvhjyJ9-country-ID-session-976056793-sessTime-5:98963225@proxy.us.bunnyproxy.com:18080"
+    )
+    assert (
+        app.proxy_for_region(
+            "http://7774239-9c7d895c63:e607530e89-US-41966127-5m@gate.kookeey.info:1000",
+            "TR",
+        )
+        == "http://7774239-9c7d895c63:e607530e89-TR-41966127-5m@gate.kookeey.info:1000"
+    )
+
+
+def test_proxy_config_view_exposes_stage_pools_without_credentials(monkeypatch):
+    monkeypatch.setenv("OPENAI_PAY_INDIA_PROMOTION_PROXY", FIXTURE_PROXY)
+    monkeypatch.setenv("OPENAI_PAY_INDIA_PROMOTION_PROXY_POOL", f"{FIXTURE_PROXY};{FIXTURE_PROXY_TWO}")
+
+    view = app.proxy_config_view("upi")
+    serialized = json.dumps(view)
+    stages = {item["stage"]: item for item in view["stages"]}
+
+    assert tuple(stages) == app.PROXY_STAGE_ORDER
+    assert stages["checkout"]["region"] == "IN"
+    assert stages["promotion"]["region"] == "VN"
+    assert stages["provider"]["fallback"]["env_key"] == "OPENAI_PAY_INDIA_PROXY"
+    assert stages["promotion"]["fallback"]["env_key"] == "OPENAI_PAY_INDIA_PROMOTION_PROXY"
+    assert stages["promotion"]["pool"]["env_key"] == "OPENAI_PAY_INDIA_PROMOTION_PROXY_POOL"
+    assert stages["promotion"]["pool"]["count"] == 2
+    assert [item["stage"] for item in view["visible_stages"]] == ["checkout", "promotion", "provider"]
+    assert "fixture-user" not in serialized
+    assert "proxy.example.test" not in serialized
+
+
+def test_stage_proxy_update_writes_stage_specific_env_keys(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("UNRELATED_VALUE=keep\n", encoding="utf-8")
+    monkeypatch.setattr(app, "PAYLINK_ENV_PATH", env_path)
+    monkeypatch.setattr(app, "log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setenv("OPENAI_PAY_SWISS_PROMOTION_PROXY", "")
+    monkeypatch.setenv("OPENAI_PAY_SWISS_PROMOTION_PROXY_POOL", "")
+
+    result = app.update_provider_proxy_config(
+        app.ProviderProxyUpdateRequest(
+            provider="twint",
+            stage="promotion",
+            fallbackProxy=FIXTURE_PROXY,
+            proxyPool=FIXTURE_PROXY_TWO,
+        )
+    )
+
+    content = env_path.read_text(encoding="utf-8")
+    promotion_stage = {item["stage"]: item for item in result["config"]["stages"]}["promotion"]
+    assert "UNRELATED_VALUE=keep" in content
+    assert f'OPENAI_PAY_SWISS_PROMOTION_PROXY="{FIXTURE_PROXY}"' in content
+    assert f'OPENAI_PAY_SWISS_PROMOTION_PROXY_POOL="{FIXTURE_PROXY_TWO}"' in content
+    assert promotion_stage["fallback"]["env_key"] == "OPENAI_PAY_SWISS_PROMOTION_PROXY"
+    assert promotion_stage["pool"]["count"] == 1
+    assert "fixture-user" not in json.dumps(result)
+
+
+def test_checkout_stage_pool_overrides_provider_pool(monkeypatch):
+    checkout_proxy = "http://fixture-checkout:fixture-pass@checkout-proxy.example.test:443"
+    provider_proxy = "http://fixture-provider:fixture-pass@provider-proxy.example.test:443"
+    monkeypatch.setenv("OPENAI_PAY_IDEAL_CHECKOUT_PROXY_POOL", checkout_proxy)
+    monkeypatch.setenv("OPENAI_PAY_IDEAL_CHECKOUT_PROXY", "")
+    monkeypatch.setattr(app, "IDEAL_PROXY_POOL", [provider_proxy])
+    monkeypatch.setattr(app, "IDEAL_STAGE_PROXY", provider_proxy)
+
+    candidates = app.proxy_candidates_for_link_type("", "ideal")
+
+    assert candidates == [checkout_proxy]
+
+
+def test_approve_stage_uses_override_then_provider_fallback(monkeypatch):
+    approve_proxy = "http://fixture-approve:fixture-pass@approve-proxy.example.test:443"
+    provider_proxy = "http://fixture-provider:fixture-pass@provider-proxy.example.test:443"
+    req = app.LongLinkRequest(link_type="gcash", billing_country="PH", payment_locale="en-PH")
+    monkeypatch.setenv("OPENAI_PAY_PH_APPROVE_PROXY", approve_proxy)
+    monkeypatch.setenv("OPENAI_PAY_PH_APPROVE_PROXY_POOL", "")
+    monkeypatch.setattr(app, "PH_PROXY_POOL", [])
+    monkeypatch.setattr(app, "PH_STAGE_PROXY", provider_proxy)
+    monkeypatch.setattr(app, "PROVIDER_PROXY_POOL", [])
+    monkeypatch.setattr(app, "PROVIDER_STAGE_PROXY", "")
+    monkeypatch.setattr(app, "DEFAULT_PROXY_POOL", [])
+    monkeypatch.setattr(app, "DEFAULT_PROXY", "")
+
+    assert app.approve_stage_proxy(req, fallback_proxy=provider_proxy) == approve_proxy
+
+    monkeypatch.setenv("OPENAI_PAY_PH_APPROVE_PROXY", "")
+
+    assert app.approve_stage_proxy(req, fallback_proxy=provider_proxy) == provider_proxy

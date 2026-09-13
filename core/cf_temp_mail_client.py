@@ -46,6 +46,7 @@ class CFTempMailAccount:
 
 
 _CONTEXT_CACHE: dict[str, CFTempMailAccount] = {}
+_MAILBOX_USAGE_STATUSES = frozenset({"created", "registering", "used", "released", "failed", "disabled"})
 
 
 def _cache_key(email: str) -> str:
@@ -306,11 +307,44 @@ def pick_account() -> CFTempMailAccount:
     return account
 
 
+def report_mailbox_usage(
+    email: str,
+    status: str,
+    *,
+    account_id: int | None = None,
+    detail: str | None = None,
+) -> bool:
+    """向 Worker 回写临时邮箱生命周期；失败不阻断注册流程。"""
+    normalized_email = str(email or "").strip().lower()
+    normalized_status = str(status or "").strip().lower()
+    if not normalized_email or normalized_status not in _MAILBOX_USAGE_STATUSES:
+        return False
+
+    payload: dict[str, Any] = {"email": normalized_email, "status": normalized_status}
+    if account_id is not None:
+        payload["account_id"] = int(account_id)
+    if detail:
+        payload["detail"] = str(detail)[:300]
+    try:
+        response = _request("POST", "/api/mailbox-status", json_body=payload, content_type=True)
+        return bool(isinstance(response, dict) and response.get("ok"))
+    except CFTempMailError as exc:
+        logger.warning("[Cloudflare] 临时邮箱状态回写失败（%s）: %s", normalized_status, exc)
+        return False
+
+
 def get_account_context(email: str) -> CFTempMailAccount | None:
     return _CONTEXT_CACHE.get(_cache_key(email))
 
 
 def release_account(email: str, status: str = "available", note: str | None = None) -> None:
+    status_map = {
+        "available": "released",
+        "used": "used",
+        "failed": "failed",
+        "disabled": "disabled",
+    }
+    report_mailbox_usage(email, status_map.get(str(status or "").lower(), "released"))
     _CONTEXT_CACHE.pop(_cache_key(email), None)
     logger.info(
         "[Cloudflare] 已释放临时邮箱: %s（status=%s, note=%s）",

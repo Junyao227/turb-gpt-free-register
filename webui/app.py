@@ -13,7 +13,6 @@ Flask 本地控制台。
 import json
 import logging
 import gzip
-import json
 import threading
 import time
 import uuid
@@ -22,7 +21,8 @@ from urllib.parse import urlparse
 from flask import Flask, Response, jsonify, make_response, render_template, request
 import pyotp
 
-from core import codex_retry_service, db, plan_check_service, extract_link_service, codex_agent_service, live_check_service
+from core import codex_retry_service, db, plan_check_service, extract_link_service, codex_agent_service, live_check_service, pay153_client
+from config.proxy import proxy_display_label
 from webui.auth import init_auth, register_auth_routes
 from core import registration_service as svc
 from webui import config_editor
@@ -126,6 +126,13 @@ def _compact_account_for_list(row: dict) -> dict:
         if key in row:
             out[key] = row.get(key)
 
+    if "proxy_used" in row:
+        proxy_used = str(row.get("proxy_used") or "").strip()
+        if proxy_used.startswith(("browser_use:", "skyvern:")):
+            out["proxy_used"] = proxy_used
+        else:
+            out["proxy_used"] = proxy_display_label(proxy_used)
+
     if row.get("plan_check_status") in ("queued", "running") or row.get("plan_check_ok") is False:
         out["plan_check_ok"] = row.get("plan_check_ok")
 
@@ -138,13 +145,13 @@ def _compact_account_for_list(row: dict) -> dict:
         "token_expired", "token_expires_at",
         # 查活状态。
         "live_check_status", "live_check_error", "live_checked_at",
-        "live_check_proxy_used", "live_check_fingerprint_text",
+        "live_check_device_id", "live_check_proxy_used", "live_check_fingerprint_text",
         # 提链成功/失败时才需要。
         "extract_link_status", "extract_link_type", "extract_link_message", "extract_link_error",
         "extract_link_long_url", "extract_link_copy_paste", "extract_link_image_url_png",
         "extract_link_image_url_svg", "extract_link_expires_at",
         # Codex / Agent 状态提示。
-        "codex_error", "codex_agent_message", "codex_agent_runtime_id",
+        "codex_error", "codex_agent_message", "codex_agent_error", "codex_agent_runtime_id",
         "codex_agent_sub2api_url", "codex_agent_sub2api_mode", "codex_agent_sub2api_total",
         "reauth_error", "chatgpt_token_refresh_error",
         "totp_setup_error", "totp_setup_message", "totp_setup_started_at", "totp_setup_completed_at",
@@ -1089,6 +1096,35 @@ def create_app(auth_code: str | None = None) -> Flask:
         if not queued.get("accepted"):
             return jsonify({"ok": False, **queued}), 503
         return jsonify({"ok": True, "started": True, **{k: v for k, v in queued.items() if k != "future"}}), 202
+
+    @app.post("/api/accounts/<int:acc_id>/extract-link/clear")
+    def api_account_extract_link_clear(acc_id: int):
+        """清空单账号提链状态/错误/结果，不删除账号或 token。"""
+        status = db.clear_account_extract(int(acc_id))
+        if status == "missing":
+            return jsonify({"ok": False, "error": "账号不存在"}), 404
+        if status == "busy":
+            return jsonify({"ok": False, "error": "提链任务正在运行，不能清空"}), 409
+        return jsonify({"ok": True, "cleared": True})
+
+    @app.post("/api/accounts/extract-link/clear-bulk")
+    def api_accounts_extract_link_clear_bulk():
+        """批量清空账号提链状态/错误/结果，不删除账号或 token。"""
+        data = request.get_json(silent=True) or {}
+        ids = data.get("account_ids") or data.get("ids") or []
+        if not isinstance(ids, list) or not ids:
+            return jsonify({"ok": False, "error": "account_ids 必须是非空数组"}), 400
+        if len(ids) > 500:
+            return jsonify({"ok": False, "error": "单次最多清除 500 个账号"}), 400
+
+        cleared, skipped = db.clear_accounts_extract(ids)
+        return jsonify({
+            "ok": True,
+            "cleared": cleared,
+            "cleared_count": len(cleared),
+            "skipped": skipped,
+            "skipped_count": len(skipped),
+        })
 
     @app.post("/api/accounts/extract-link-bulk")
     def api_accounts_extract_link_bulk():
@@ -2148,6 +2184,70 @@ def create_app(auth_code: str | None = None) -> Flask:
             headers={"Content-Disposition": f'attachment; filename="{dl_name}"'},
         )
 
+    @app.post("/api/codex/upload-bulk-to-cdk-management")
+    def api_codex_upload_bulk_to_cdk_management():
+        """从 CPA 拉取选中账号的真实凭证并批量写入 CDK 管理端。"""
+        import json as _json
+
+        from core.cdk_management import import_cpa_file
+        from core.codex_oauth import download_cpa_codex_auth_text
+
+        data = request.get_json(silent=True) or {}
+        filenames = data.get("filenames") or []
+        if not isinstance(filenames, list) or not filenames:
+            return jsonify({"ok": False, "error": "filenames 必须是非空数组"}), 400
+        if len(filenames) > 1000:
+            return jsonify({"ok": False, "error": "单次最多 1000 个"}), 400
+
+        completed = []
+        errors = []
+        seen = set()
+        for fname in filenames:
+            if not isinstance(fname, str) or not fname.strip():
+                errors.append({"filename": str(fname), "error": "非法文件名"})
+                continue
+            if fname in seen:
+                continue
+            seen.add(fname)
+            try:
+                content, real_fname = db.read_codex_credential(fname)
+                try:
+                    local = _json.loads(content)
+                except Exception as exc:
+                    raise ValueError("本地 Codex 记录不是有效 JSON") from exc
+                email = str(local.get("email") or "").strip().lower()
+                if not email or "@" not in email:
+                    raise ValueError("本地 Codex 记录缺少有效邮箱")
+
+                cpa_text, cpa_name, _meta = download_cpa_codex_auth_text(
+                    email=email,
+                    local_filename=real_fname,
+                )
+                remote = import_cpa_file(
+                    email=email,
+                    content=cpa_text,
+                    filename=cpa_name,
+                    source_filename=real_fname,
+                )
+                db.mark_codex_exported(real_fname)
+                result = remote.get("result") if isinstance(remote.get("result"), dict) else {}
+                completed.append({
+                    "filename": real_fname,
+                    "action": str(result.get("action") or "uploaded"),
+                    "record_id": result.get("record_id"),
+                })
+            except Exception as exc:
+                logger.warning("上传 Codex CPA 到 CDK 管理端失败: filename=%s error=%s", fname, exc)
+                errors.append({"filename": fname, "error": f"{type(exc).__name__}: {exc}"})
+
+        return jsonify({
+            "ok": True,
+            "completed": completed,
+            "completed_count": len(completed),
+            "errors": errors,
+            "error_count": len(errors),
+        })
+
     @app.post("/api/codex/download-bulk")
     def api_codex_download_bulk():
         """
@@ -2910,6 +3010,107 @@ def create_app(auth_code: str | None = None) -> Flask:
     # ----------------------------------------------------------
     # 配置读写
     # ----------------------------------------------------------
+    # ----------------------------------------------------------
+    # PAY.153 协议支付服务代理
+    # ----------------------------------------------------------
+    def _pay153_json(result: dict, *, status: int = 200):
+        payload = dict(result or {})
+        payload.setdefault("ok", True)
+        return jsonify(payload), status
+
+    def _pay153_error(exc: Exception):
+        logger.warning("PAY.153 代理调用失败: %s", exc)
+        status = 400 if isinstance(exc, pay153_client.Pay153ConfigError) else 502
+        return jsonify({"ok": False, "error": pay153_client.redact_text(exc)}), status
+
+    @app.get("/api/pay153/health")
+    def api_pay153_health():
+        try:
+            return _pay153_json(pay153_client.health())
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.get("/api/pay153/stats")
+    def api_pay153_stats():
+        try:
+            return _pay153_json(pay153_client.stats())
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.get("/api/pay153/supported-countries")
+    def api_pay153_supported_countries():
+        try:
+            return _pay153_json(pay153_client.supported_countries())
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.get("/api/pay153/country-fields")
+    def api_pay153_country_fields():
+        try:
+            return _pay153_json(pay153_client.country_fields(request.args.get("country")))
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.get("/api/pay153/jobs")
+    def api_pay153_jobs():
+        try:
+            return _pay153_json(pay153_client.list_jobs())
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.post("/api/pay153/jobs")
+    def api_pay153_create_job():
+        data = request.get_json(silent=True) or {}
+        try:
+            return _pay153_json(pay153_client.create_job(data), status=201)
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.get("/api/pay153/jobs/<job_id>")
+    def api_pay153_get_job(job_id: str):
+        raw_offset = request.args.get("log_offset")
+        log_offset = None
+        if raw_offset not in (None, ""):
+            try:
+                log_offset = int(raw_offset)
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "log_offset 必须是整数"}), 400
+        try:
+            return _pay153_json(pay153_client.get_job(job_id, log_offset=log_offset))
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.post("/api/pay153/jobs/<job_id>/otp")
+    def api_pay153_submit_otp(job_id: str):
+        data = request.get_json(silent=True) or {}
+        try:
+            return _pay153_json(pay153_client.submit_otp(job_id, data.get("value", "")))
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.post("/api/pay153/jobs/<job_id>/captcha")
+    def api_pay153_submit_captcha(job_id: str):
+        data = request.get_json(silent=True) or {}
+        try:
+            return _pay153_json(pay153_client.submit_captcha(job_id, data.get("value", "")))
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.post("/api/pay153/jobs/<job_id>/browser/action")
+    def api_pay153_browser_action(job_id: str):
+        data = request.get_json(silent=True) or {}
+        try:
+            return _pay153_json(pay153_client.browser_action(job_id, data))
+        except Exception as exc:
+            return _pay153_error(exc)
+
+    @app.post("/api/pay153/jobs/<job_id>/cancel")
+    def api_pay153_cancel_job(job_id: str):
+        try:
+            return _pay153_json(pay153_client.cancel_job(job_id))
+        except Exception as exc:
+            return _pay153_error(exc)
+
     @app.get("/api/config")
     def api_config_get():
         return jsonify(config_editor.get_config())

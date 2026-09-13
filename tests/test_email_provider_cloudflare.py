@@ -44,6 +44,27 @@ class EmailProviderCloudflareTests(unittest.TestCase):
         self.assertEqual(source, "cloudflare")
         release_account.assert_called_once()
 
+    def test_report_mailbox_usage_posts_lifecycle_payload(self):
+        with patch.object(cf_temp_mail_client, "_request", return_value={"ok": True}) as request:
+            self.assertTrue(
+                cf_temp_mail_client.report_mailbox_usage(
+                    "n@mail.test", "used", account_id=12
+                )
+            )
+        request.assert_called_once_with(
+            "POST",
+            "/api/mailbox-status",
+            json_body={"email": "n@mail.test", "status": "used", "account_id": 12},
+            content_type=True,
+        )
+
+    def test_acquire_cloudflare_marks_mailbox_registering(self):
+        with patch.object(email_provider, "parse_email_sources", return_value=["cloudflare"]), \
+             patch.object(email_provider, "_pick_from_source", return_value="n@mail.test"), \
+             patch("core.cf_temp_mail_client.report_mailbox_usage", return_value=True) as report:
+            self.assertEqual(email_provider.acquire_email(), "n@mail.test")
+        report.assert_called_once_with("n@mail.test", "registering")
+
 
 if __name__ == "__main__":
     unittest.main()

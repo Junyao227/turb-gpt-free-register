@@ -192,12 +192,14 @@ _RELOADABLE_SUBMODULES = (
     "config.email",
     "config.twofa",
     "config.roxybrowser",
+    "config.ant_browser",
     "config.cloakbrowser",
     "config.browser_use",
     "config.skyvern",
     "config.flow_trigger",
     "config.codex",
     "config.extract_link",
+    "config.pay153",
     "config.sub2api",
     "config.humanize",
 )
@@ -229,9 +231,9 @@ def reload_all() -> list[str]:
 def _refresh_top_level_constants() -> None:
     """把刚 reload 的子模块的常量重新拷一份到 config 包顶层。"""
     import config as _self
-    from config import browser, openai_protocol, proxy as _proxy, register, email, twofa, roxybrowser, cloakbrowser, browser_use, skyvern, codex, extract_link, sub2api, humanize, flow_trigger
+    from config import browser, openai_protocol, proxy as _proxy, register, email, twofa, roxybrowser, ant_browser, cloakbrowser, browser_use, skyvern, codex, extract_link, pay153, sub2api, humanize, flow_trigger
     # 简单粗暴：枚举一遍重要常量，覆盖到 _self
-    for src in (browser, openai_protocol, _proxy, register, email, twofa, roxybrowser, cloakbrowser, browser_use, skyvern, codex, extract_link, sub2api, humanize, flow_trigger):
+    for src in (browser, openai_protocol, _proxy, register, email, twofa, roxybrowser, ant_browser, cloakbrowser, browser_use, skyvern, codex, extract_link, pay153, sub2api, humanize, flow_trigger):
         for k in dir(src):
             if k.isupper() or k in ("normalize_proxy_url", "pick_proxy", "pick_browser_profile", "build_browser_environment", "validate_browser_profile"):
                 setattr(_self, k, getattr(src, k))
@@ -265,6 +267,7 @@ __all__ = [
     "PLAN_CHECK_MIN_INTERVAL", "PLAN_CHECK_JITTER", "normalize_proxy_url", "pick_proxy", "PROXY",
     # register
     "REGISTER_EMAIL", "REGISTER_PASSWORD", "REGISTER_NAME",
+    "AUTO_PLAN_CHECK_AFTER_REGISTER", "POST_REGISTER_DWELL_SECONDS_RANGE",
     # email
     "USE_EMAIL_SERVICE", "EMAIL_SOURCE",
     "OUTLOOK_ACCOUNTS_FILE", "OUTLOOK_API_BASE",

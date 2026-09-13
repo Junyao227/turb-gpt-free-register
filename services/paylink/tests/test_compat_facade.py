@@ -46,7 +46,6 @@ def _event_data(value: str) -> dict:
         ("gcash", "gcash", "PH", "en-PH"),
         ("gopay", "gopay", "ID", "id"),
         ("grabpay", "grabpay", "PH", "en"),
-        ("paypal", "paypal", "US", "en"),
     ],
 )
 def test_registry_resolves_first_release_providers(public_type, native_type, country, locale):
@@ -55,6 +54,23 @@ def test_registry_resolves_first_release_providers(public_type, native_type, cou
     assert resolved.definition.native_type == native_type
     assert resolved.settings.country == country
     assert resolved.settings.locale == locale
+
+
+def _us_paypal_config_path(tmp_path: Path) -> Path:
+    config_path = tmp_path / "providers.ini"
+    config_path.write_text(
+        "[providers.paypal]\nenabled = true\ncountry = US\nlocale = en\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_registry_resolves_default_us_paypal_profile(tmp_path):
+    resolved = resolve_provider("paypal", _us_paypal_config_path(tmp_path))
+
+    assert resolved.definition.native_type == "paypal"
+    assert resolved.settings.country == "US"
+    assert resolved.settings.locale == "en"
 
 
 def test_enabled_provider_metadata_exposes_console_routes():
@@ -372,7 +388,7 @@ def test_facade_grabpay_job_uses_native_ph_approval_request_and_persists_result(
     assert result["payment_method"] == "grabpay"
 
 
-def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result():
+def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result(tmp_path):
     store = ProgressStore()
     captured_requests = []
 
@@ -390,6 +406,7 @@ def test_facade_paypal_job_uses_standard_us_checkout_and_normalizes_result():
         set_progress=store.set_progress,
         get_progress=store.get_progress,
         log_event=lambda *_args, **_kwargs: None,
+        provider_resolver=lambda link_type: resolve_provider(link_type, _us_paypal_config_path(tmp_path)),
     )
 
     job_id = facade.create_job(ExtractRequest(token="access-token-123", link_type="paypal"))

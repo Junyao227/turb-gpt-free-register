@@ -154,12 +154,12 @@ class AccountReauthStorageTests(unittest.TestCase):
         td, paths = self._storage()
         try:
             with self._patch_storage(paths):
-                paths["_JOBS_JSON"].write_text(json.dumps([{
+                db._save_jobs([{
                     "id": 7,
                     "job_type": "codex_retry",
                     "account_id": 1,
                     "status": "running",
-                }]), encoding="utf-8")
+                }])
                 with self.assertRaises(ValueError):
                     db.create_account_reauth_job(
                         1,
@@ -167,7 +167,7 @@ class AccountReauthStorageTests(unittest.TestCase):
                         email_source="generic_api",
                     )
 
-                paths["_JOBS_JSON"].write_text(json.dumps([{
+                db._save_jobs([{
                     "id": 8,
                     "job_type": "registration",
                     "root_job_id": 8,
@@ -175,7 +175,7 @@ class AccountReauthStorageTests(unittest.TestCase):
                     "email_source": "generic_api",
                     "status": "failed",
                     "account_id": 1,
-                }]), encoding="utf-8")
+                }])
                 job, created = db.create_account_reauth_job(
                     1,
                     email="account@example.com",

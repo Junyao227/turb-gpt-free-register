@@ -11,7 +11,8 @@
 """
 from config.env_loader import apply_env_overrides
 import random
-from urllib.parse import quote, urlsplit
+import re
+from urllib.parse import quote, unquote, urlsplit
 
 
 # 本地代理入口；实际出口地区以代理/分流规则为准。
@@ -49,6 +50,14 @@ PLAN_CHECK_JITTER = 0.8
 
 
 _PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
+_KNOWN_PROXY_PROVIDERS = (
+    ("kookeey.info", "kookeey"),
+    ("bunnyproxy.com", "bunnyproxy"),
+    ("cliproxy.io", "cliproxy"),
+    ("1024proxy.io", "1024proxy"),
+    ("ipipbright.net", "ipipbright"),
+)
+_COUNTRY_CODE_RE = re.compile(r"^[a-z]{2}$", re.I)
 
 
 def normalize_proxy_url(value: str, *, default_scheme: str = "http") -> str:
@@ -104,6 +113,75 @@ def normalize_proxy_url(value: str, *, default_scheme: str = "http") -> str:
     if not 1 <= port <= 65535:
         raise ValueError("代理端口超出 1-65535")
     return normalized
+
+
+def mask_proxy_url(value: str) -> str:
+    """Return a display-safe proxy URL without username or password."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        normalized = normalize_proxy_url(text)
+        parsed = urlsplit(normalized)
+        host = parsed.hostname or ""
+        port = f":{parsed.port}" if parsed.port else ""
+        auth = "***:***@" if parsed.username or parsed.password else ""
+        return f"{parsed.scheme}://{auth}{host}{port}" or "***"
+    except (TypeError, ValueError):
+        return "***"
+
+
+def _known_proxy_provider(host: str) -> tuple[str, str] | None:
+    for domain, provider in _KNOWN_PROXY_PROVIDERS:
+        if host == domain or host.endswith(f".{domain}"):
+            return provider, domain
+    return None
+
+
+def _country_code_from_host(host: str, provider_domain: str) -> str:
+    host_labels = host.split(".")
+    domain_labels = provider_domain.split(".")
+    prefix_labels = host_labels[:-len(domain_labels)]
+    for label in reversed(prefix_labels):
+        if _COUNTRY_CODE_RE.fullmatch(label):
+            return label.lower()
+    return ""
+
+
+def _country_code_from_auth_value(value: str) -> str:
+    match = re.search(r"(?:^|[-_])(?:country|region|area)[-_:]?([a-z]{2})(?=[-_]|$)", value, re.I)
+    return match.group(1).lower() if match else ""
+
+
+def proxy_display_label(value: str) -> str:
+    """Return a concise provider/region label when the proxy format is known."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        normalized = normalize_proxy_url(text)
+        parsed = urlsplit(normalized)
+    except (TypeError, ValueError):
+        return "***"
+
+    host = str(parsed.hostname or "").lower()
+    provider_info = _known_proxy_provider(host)
+    if provider_info:
+        provider, provider_domain = provider_info
+        username = unquote(parsed.username or "")
+        password = unquote(parsed.password or "")
+        country = (
+            _country_code_from_auth_value(username)
+            or _country_code_from_auth_value(password)
+            or _country_code_from_host(host, provider_domain)
+        )
+        if provider == "kookeey" and not country:
+            parts = re.split(r"[-_]", password)
+            candidate = parts[1] if len(parts) > 1 else ""
+            country = candidate.lower() if _COUNTRY_CODE_RE.fullmatch(candidate) else ""
+        return f"{provider}-{country}" if country else provider
+
+    return mask_proxy_url(normalized)
 
 
 def pick_proxy() -> str:

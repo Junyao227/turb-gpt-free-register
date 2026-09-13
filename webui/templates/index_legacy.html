@@ -583,6 +583,7 @@
           <div class="btn-group">
             <span class="btn-group-title">Token</span>
             <button class="btn primary" id="btnRefreshSelectedChatGPTTokens" disabled title="使用已保存的 ChatGPT OAuth refresh token 刷新选中账号；没有可用 refresh token 的账号会自动跳过">刷新 Token</button>
+            <button class="btn good" id="btnCopySelectedTokens" disabled title="复制选中账号的 Token，每个账号一行">复制选中Token</button>
           </div>
           <div class="btn-group">
             <span class="btn-group-title">批量</span>
@@ -597,7 +598,7 @@
           </div>
           <div class="btn-group">
             <span class="btn-group-title">全部</span>
-            <button class="btn primary" id="copyAllTokens">复制Token</button>
+            <button class="btn primary" id="copyAllTokens" title="复制当前页所有 Token，每个账号一行；不受勾选状态影响">复制本页Token</button>
             <button class="btn good" id="copyAllLines">复制整行</button>
           </div>
         </div>
@@ -802,6 +803,9 @@ let JOBS = [];
 let JOBS_TOTAL = 0;
 let JOB_STATUS_COUNTS = {};
 let jobsRenderSignature = '';
+let jobsLoading = false;
+let summaryLoading = false;
+let summaryPending = false;
 const JOB_SELECTED = new Set();
 let activeLogJob = null, logTimer = null, jobsTimer = null;
 
@@ -871,6 +875,19 @@ function formatTraffic(t) {
   const jsHint = j && j.enabled ? `，JS脚本 ${n(j.script_count)}（执行 ${n(j.executed_script_count)}，候选 ${n(j.candidate_script_count)}）` : '';
   return `<span title="上传 ${fmt(t.upload_bytes)}，下载 ${fmt(t.download_bytes)}，${n(t.request_count)} 个请求${jsHint}">${fmt(t.total_bytes)}</span>`;
 }
+function _agentErrorSummary(v) {
+function _agentErrorSummary(v) {
+  const text = String(v || '').trim();
+  if (!text) return '';
+  const code = (text.match(/"code"\s*:\s*"([^"]+)"/i) || [])[1] || '';
+  const msg = (text.match(/"message"\s*:\s*"([^"]+)"/i) || [])[1] || '';
+  const status = (text.match(/\b(\d{3})\s+\{/ ) || [])[1] || '';
+  if (status && code) return `${status} · ${code}`;
+  if (code && msg) return `${code}: ${msg}`;
+  if (code) return code;
+  if (msg) return msg;
+  return short(text, 120);
+}
 function copyId(v) { if (!v) return ''; const id = 'c'+(++copySeq); copyStore.set(id, v); return id; }
 function cbtn(label, value, cls='') { const id = copyId(value); return `<button class="${cls}" data-copy-id="${id}" ${id?'':'disabled'}>${label}</button>`; }
 function pill(status) {
@@ -914,6 +931,8 @@ $$('nav button').forEach(b => b.addEventListener('click', () => activateTab(b.da
 
 // ---------- 概览 ----------
 async function loadSummary() {
+  if (summaryLoading) { summaryPending = true; return; }
+  summaryLoading = true;
   try {
     const s = await api('/api/summary');
     $('#statAccounts').textContent = s.accounts;
@@ -923,6 +942,13 @@ async function loadSummary() {
     $('#statFailed').textContent = s.outlook_failed;
     $('#updatedAt').textContent = new Date().toLocaleTimeString();
   } catch(e) {}
+  finally {
+    summaryLoading = false;
+    if (summaryPending) {
+      summaryPending = false;
+      setTimeout(loadSummary, 0);
+    }
+  }
 }
 
 // ---------- 注册 / 任务 ----------
@@ -1024,22 +1050,32 @@ function updateJobsSelectionUi(pageRows = null) {
 }
 
 async function refreshJobs() {
+  if (jobsLoading) return;
+  jobsLoading = true;
   try {
     const p = PAGERS.jobs;
-    const res = await api(`/api/jobs?paged=1&page=${encodeURIComponent(p.page)}&page_size=${encodeURIComponent(p.size)}`);
-    const nextJobs = res.items || [];
+    const fetchPage = () => api(`/api/jobs?paged=1&page=${encodeURIComponent(p.page)}&page_size=${encodeURIComponent(p.size)}`);
+    let res = await fetchPage();
+    let nextJobs = res.items || [];
     JOBS_TOTAL = Number(res.total || nextJobs.length || 0);
     JOB_STATUS_COUNTS = res.status_counts || {};
-    const totalPages = Math.max(1, Math.ceil(JOBS_TOTAL / p.size));
-    if (p.page > totalPages) { p.page = totalPages; return refreshJobs(); }
+    let totalPages = Math.max(1, Math.ceil(JOBS_TOTAL / p.size));
+    if (p.page > totalPages) {
+      p.page = totalPages;
+      res = await fetchPage();
+      nextJobs = res.items || [];
+      JOBS_TOTAL = Number(res.total || nextJobs.length || 0);
+      JOB_STATUS_COUNTS = res.status_counts || {};
+      totalPages = Math.max(1, Math.ceil(JOBS_TOTAL / p.size));
+    }
     const nextSignature = JSON.stringify({items: nextJobs, total: JOBS_TOTAL, status_counts: JOB_STATUS_COUNTS, page: p.page, size: p.size});
     JOBS = nextJobs;
     if (nextSignature !== jobsRenderSignature) {
       jobsRenderSignature = nextSignature;
       renderJobs();
     }
-    loadSummary();
   } catch(e) {}
+  finally { jobsLoading = false; }
 }
 
 let modalScrollY = 0;
@@ -1373,7 +1409,8 @@ function _codexAgentCell(r) {
   const s = r.codex_agent_status || '';
   const err = r.codex_agent_error || '';
   const msg = r.codex_agent_message || '';
-  const title = esc(msg || r.codex_agent_runtime_id || '');
+  const detail = err || msg || r.codex_agent_runtime_id || '';
+  const title = esc(detail);
   if (s === 'queued') return `<div class="agent-token-cell"><span class="pill status-running" title="${title}">排队中</span></div>`;
   if (s === 'running') return `<div class="agent-token-cell"><span class="pill status-running" title="${title}">生成中</span></div>`;
   if (s === 'success') {
@@ -1385,7 +1422,11 @@ function _codexAgentCell(r) {
     return `<div class="agent-token-cell"><span class="pill status-success" title="${title}">${esc(rid)}</span>${copy}${download}${uploadSub2}${regen}</div>`;
   }
   const gen = r.has_access_token ? `<button data-codex-agent="${esc(r.id)}" title="生成 Codex CLI agent_identity auth.json/token">生成Agent</button>` : '';
-  if (s === 'failed') return `<div class="agent-token-cell"><span class="pill status-failed" title="${title}">失败</span>${gen}</div>`;
+  if (s === 'failed') {
+    const reason = _agentErrorSummary(detail);
+    const reasonHtml = detail ? `<div class="extract-link-error" title="${title}">${esc(reason)}</div>` : '';
+    return `<div class="agent-token-cell"><span class="pill status-failed" title="${title}">失败</span>${reasonHtml}${gen}</div>`;
+  }
   return gen ? `<div class="agent-token-cell">${gen}</div>` : '<span class="muted">-</span>';
 }
 function _fmtPlanTime(v, dateOnly = false) {
@@ -1641,6 +1682,8 @@ function updateAccountSelectionUi(pageRows = null) {
   if (extractLinksBtn) extractLinksBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (checkPlanBtn) checkPlanBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (refreshChatgptTokensBtn) refreshChatgptTokensBtn.disabled = ACCOUNT_SELECTED.size === 0;
+  const copySelectedTokensBtn = $('#btnCopySelectedTokens');
+  if (copySelectedTokensBtn) copySelectedTokensBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (copySelectedBtn) copySelectedBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (copySelectedTokensBtn) copySelectedTokensBtn.disabled = ACCOUNT_SELECTED.size === 0;
   if (downloadTxtBtn) downloadTxtBtn.disabled = ACCOUNT_SELECTED.size === 0;
@@ -2127,6 +2170,11 @@ $('#showFreeAccountsOnly').addEventListener('change', async (e) => {
   PAGERS.accounts.page = 1;
   await loadAccounts();
   await pollAccountPlanStatuses();
+});
+$('#codexStatusFilter').addEventListener('change', () => {
+  ACCOUNT_SELECTED.clear();
+  PAGERS.accounts.page = 1;
+  loadAccounts();
 });
 $('#btnRefreshAccounts').addEventListener('click', async () => {
   const btn = $('#btnRefreshAccounts');
@@ -2866,6 +2914,7 @@ async function retrySelectedCodex() {
 $('#qAccounts').addEventListener('input', debounce(() => { ACCOUNT_SELECTED.clear(); PAGERS.accounts.page = 1; loadAccounts(); }, 250));
 $('#codexStatusFilter').addEventListener('change', () => { ACCOUNT_SELECTED.clear(); PAGERS.accounts.page = 1; loadAccounts(); });
 $('#totpStatusFilter').addEventListener('change', () => { ACCOUNT_SELECTED.clear(); PAGERS.accounts.page = 1; loadAccounts(); });
+$('#btnCopySelectedTokens')?.addEventListener('click', copySelectedAccountTokens);
 $('#copyAllTokens').addEventListener('click', async () => {
   const ids = ACCOUNTS.filter(r => r.has_access_token).map(r => Number(r.id));
   if (!ids.length) { showToast('当前页没有 Token'); return; }

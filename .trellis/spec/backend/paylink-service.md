@@ -43,23 +43,31 @@ GET /settings?provider=<public_type>
   response: administrator-only proxy configuration page for the selected public provider
 
 GET /api/config/proxy?provider=<public_type>
-  response: { "ok": true, "config": { provider, fallback, pool } }
+  response: { "ok": true, "config": { provider, fallback, pool, stages, visible_stages } }
   fallback: { env_key, configured, masked_value }
   pool: { env_key, configured, count, masked_values }
+  stages: [{
+    stage: "checkout" | "promotion" | "provider" | "approve",
+    label: string,
+    role: string,
+    region: string,
+    fallback: { env_key, configured, masked_value },
+    pool: { env_key, configured, count, masked_values }
+  }]
 
 PUT /api/config/proxy
-  request:  { "provider": string, "fallbackProxy"?: string, "proxyPool"?: string }
+  request:  { "provider": string, "stage"?: "checkout" | "promotion" | "provider" | "approve", "fallbackProxy"?: string, "proxyPool"?: string }
   response: { "ok": true, "config": <masked projection> }
 
 POST /api/config/proxy/test
-  request:  { "provider": string }
-  response: { "ok": boolean, "provider": string, "duration_ms": integer, "message": string }
+  request:  { "provider": string, "stage"?: "checkout" | "promotion" | "provider" | "approve" }
+  response: { "ok": boolean, "provider": string, "stage": string, "duration_ms": integer, "message": string }
 
 GET /api/config/provider?provider=paypal
-  response: { "ok": true, "config": { provider, country, locale, currency, choices } }
+  response: { "ok": true, "config": { provider, country, locale, currency, choices, locale_choices } }
 
 PUT /api/config/provider
-  request:  { "provider": "paypal", "country": "US" | "TH" | "BR", "locale"?: string }
+  request:  { "provider": "paypal", "country": "US" | "TH" | "BR", "locale"?: "en" | "th" | "pt-BR" }
   response: { "ok": true, "config": <credential-free profile projection> }
 
 payment_page_terminal_failure(payload: object) -> string
@@ -78,6 +86,20 @@ submits no query parameters to the event endpoint.
 - `paylink.provider_registry` owns provider public/native identity, display
   name, and queue route. `GET /api/providers` returns enabled definitions in
   registry order and is the only provider catalog consumed by the console.
+- Payment-method implementation references are intentionally one-primary-source
+  per provider to prevent duplicate project drift. PayPal follows
+  `kuozhan/PayPal-Global-Rotation-Sanitized-Source`; UPI follows
+  `py/upi-source-sanitized-20260719`; PIX, iDEAL, and Kakao Pay follow their
+  matching directories/files under
+  `py/plus/_extracted/提链脚本/ideal-link-extractor-open-source-20260712`;
+  GCash follows `py/gcash_from_token.py`. Other extracted PayPal, PIX, or UPI
+  packages are diagnostics-only unless this contract is deliberately updated.
+- The operator UI style reference is intentionally separate from payment
+  implementation references. `py/gpt-upi` is UI-only inspiration for the
+  Paylink console: light shadcn-like surfaces, rounded cards, subtle borders,
+  compact pill navigation, muted helper text, and understated primary buttons.
+  Its API routes, queue logic, proxy selection, billing rules, and extraction
+  code must not be imported or mirrored by the maintained Paylink backend.
 - Twint uses public `twint`, native `swiss`, `CH` / `de`, and the maintained
   `/ch-qr` queue. Its masked proxy settings are `OPENAI_PAY_SWISS_PROXY` and
   `OPENAI_PAY_SWISS_PROXY_POOL`; the public alias never creates a new proxy
@@ -97,44 +119,71 @@ submits no query parameters to the event endpoint.
 - The administrator-only `/settings` page keeps the shared global shell and
   registry-backed provider tabs. It returns only `env_key`, configured state,
   and pool count; proxy URLs and credentials never return to the page after
-  load or save.
-- Proxy configuration maps every public provider to a dedicated fallback/pool
-  environment-key pair. `PUT /api/config/proxy` validates changed values,
-  preserves unrelated `.env` lines, atomically replaces that file, and updates
-  the current process. Omitted fields stay unchanged; selected empty fields
-  clear their setting.
+  load or save. The settings UI visibly edits stage proxy pools only. Legacy
+  fallback proxy fields may still appear in API projections for compatibility,
+  but they are not rendered as editable operator controls.
+- Proxy configuration keeps the internal four-stage model:
+  `checkout`, `promotion`, `provider`, and `approve`. The API also returns a
+  provider-specific `visible_stages` projection for the operator page. PayPal
+  visibly exposes only `provider` as the main Checkout/PayPal pool plus
+  `promotion` as the checkout-update trial pool. The first-release complete
+  providers UPI, PIX, iDEAL, Kakao Pay, and GCash visibly expose
+  `checkout`, `promotion`, and `provider`; `approve` remains an internal
+  override/fallback contract. The legacy top-level `fallback` and `pool`
+  fields remain a backward-compatible alias of the `provider` stage, while
+  the operator page saves only `proxyPool` for the selected visible stage.
+  `PUT /api/config/proxy` validates changed values, preserves unrelated `.env`
+  lines, atomically replaces that file, and updates the current process.
+  Omitted fields stay unchanged; selected empty fields clear their setting.
 - `POST /api/config/proxy/test` uses only a configured dedicated candidate for
-  that provider against a neutral IP-echo target. It does not select a generic
-  fallback, create Checkout state, or report the tested proxy value.
+  the requested provider stage against a neutral IP-echo target. It does not
+  select a generic fallback, create Checkout state, or report the tested proxy
+  value.
 - Checkout HTTP errors are stored only as compact summaries: HTML bodies record
   the HTTP status and `HTML response`, while JSON bodies are redacted and
   bounded. Raw provider response bodies must not enter exceptions, task
   snapshots, events, or logs.
-- Checkout and provider stages use region-scoped proxy pools. The first-release
-  route is PIX `BR -> VN -> BR`, UPI `IN`, Kakao Pay `KR`, iDEAL `NL`, and
-  GCash `PH`. GCash reads `OPENAI_PAY_PH_PROXY` and
-  `OPENAI_PAY_PH_PROXY_POOL` before generic fallbacks; it must not reuse the
-  GoPay pool. GoPay uses its dedicated approval pool first and keeps its
-  established JP provider-stage fallback; billing `ID` must not rewrite that
-  provider-stage fallback. GrabPay uses its dedicated PH pool and fallback
-  before any generic PH-rewritten candidate at both stages. It must not reuse
-  either GoPay proxy setting; GCash keeps its existing PH settings.
+- Runtime proxy selection follows the stage route `checkout -> promotion ->
+  provider -> approve`. Reference-compatible country routes are PIX
+  `BR/VN/BR/BR`, UPI `IN/VN/IN/IN`, Kakao Pay `KR/VN/KR/KR`, Twint
+  `CH/VN/CH/CH`, iDEAL `NL/VN/NL/NL`, GCash `PH/VN/PH/PH`, GrabPay
+  `PH/VN/PH/PH`, and GoPay `ID/VN/JP/JP`. A stage-specific env key wins for
+  that phase. If it is absent, `checkout` falls back to the legacy checkout
+  source, `promotion` falls back to the provider seed rewritten to VN when
+  possible, `provider` falls back to the legacy provider source, and `approve`
+  falls back to provider stage. GCash keeps its existing PH provider keys and
+  must not reuse the GoPay pool. GrabPay keeps its dedicated PH provider keys
+  and must not reuse either GoPay or GCash proxy settings. GoPay keeps its
+  established JP provider/approve fallback; billing `ID` must not rewrite that
+  provider-stage fallback.
+- The `promotion` stage is displayed as a trial/promo pool. Its implementation
+  uses the OpenAI `/backend-api/payments/checkout/update` endpoint, but it is
+  not a second Checkout creation pool.
 - PayPal is a Checkout-link Provider with one explicit active profile in
   `[providers.paypal]`. US (`US` / `en` / `USD`) remains the default and uses
   the compatibility aliases `OPENAI_PAY_PAYPAL_PROXY` and
   `OPENAI_PAY_PAYPAL_PROXY_POOL`. Thailand (`TH` / `th` / `THB`) uses
   `OPENAI_PAY_PAYPAL_TH_PROXY` and `OPENAI_PAY_PAYPAL_TH_PROXY_POOL`; Brazil
   (`BR` / `pt-BR` / `BRL`) uses `OPENAI_PAY_PAYPAL_BR_PROXY` and
-  `OPENAI_PAY_PAYPAL_BR_PROXY_POOL`. The profile owns billing country, locale,
-  currency, and dedicated proxy selection; proxy text must never infer the
-  profile. The API returns only active profile metadata and masked proxy
-  projections, atomically rewrites only PayPal's non-secret INI fields, then
-  resolves the newly selected environment-key pair at runtime.
+  `OPENAI_PAY_PAYPAL_BR_PROXY_POOL`. The profile owns billing country, payment
+  locale, currency, and dedicated proxy selection; proxy text must never infer
+  the profile. Billing country controls currency and proxy key selection, while
+  payment locale is chosen from the fixed PayPal language whitelist
+  `en` / `th` / `pt-BR`. The API returns only active profile metadata, country
+  choices, locale choices, and masked proxy projections, atomically rewrites
+  only PayPal's non-secret INI fields, then resolves the newly selected
+  environment-key pair at runtime.
+  US/TH/BR are three profiles of the same PayPal implementation, not separate
+  reference projects. The PayPal settings page must label the selector as a
+  billing Profile, expose both billing country and payment language controls,
+  and display only the active profile's main pool and promotion pool.
   PayPal verifies that the Checkout lists `paypal` and returns only the
   Checkout URL. It does not create a Stripe payment method, submit a payment,
-  or allocate a provider-pending queue record. Pool values are comma- or
-  semicolon-separated URLs and must remain only in `.env`; tests use fixture
-  proxy URLs.
+  or allocate a provider-pending queue record. PayPal `promotion` stage is
+  optional and only runs when its stage-specific proxy is configured; the
+  default Checkout-link path must not start a provider stage. Pool values are
+  comma- or semicolon-separated URLs and must remain only in `.env`; tests use
+  fixture proxy URLs.
 - Checkout creation may rotate to the next regional proxy after a challenge or
   transport exception. Once Stripe returns a terminal submission state, the
   provider flow must preserve the Stripe error code and stop immediately rather
@@ -148,9 +197,25 @@ submits no query parameters to the event endpoint.
   `assets/app-shell.js` resources. Global navigation is stable across pages;
   provider tabs are generated from `/api/providers` and never duplicated as a
   hard-coded frontend provider list.
+- Visual styling should preserve the `py/gpt-upi`-inspired card language
+  without coupling to its React/Tailwind implementation: use local static
+  CSS, keep the two-level navigation contract, and avoid copying UI behavior
+  that would duplicate existing Paylink business state.
+- The global shell tabs are styled only through `assets/app-shell.css`. Top
+  level tabs and provider tabs must share compact pill sizing, internal
+  horizontal scrolling, active-state contrast, and page-wide cache versioning.
+  The shared shell does not render a logout control in the primary navigation.
+  Individual pages must not override those tab controls with legacy `button`
+  or `a` rules.
 - Provider tabs preserve the active global area. `kakao_pay` is translated to
   native `korea` only at the home/debug selector boundary. Queue navigation
   uses each registry entry's `queue_path`.
+- Payment queue pages (`/qr`, `/in-qr`, `/kr-qr`, `/ch-qr`, `/nl-qr`,
+  `/ph-qr`, and the generic provider queue fixture) share `assets/qr.css`.
+  Queue content uses the same shell-aligned width, rounded title card, compact
+  action buttons, pill status line, full-width empty state, and responsive
+  card grid. Provider-hosted payment pages use the wider provider-frame grid
+  instead of the small QR-card grid.
 - At narrow widths, both navigation rows stay single-line and scroll inside
   their own containers. Page content must not create document-level horizontal
   overflow; wide task tables scroll inside their table wrapper.
@@ -195,11 +260,12 @@ submits no query parameters to the event endpoint.
 | HTML route response | Cache-prevention headers are added before the response is returned. |
 | Static asset response | HTML cache middleware leaves its cache headers unchanged. |
 | Unsupported proxy-config provider | Configuration API returns HTTP 400. |
-| Missing or unsupported PayPal country, or country/locale pair | Profile API and direct PayPal request return HTTP 400 without rewriting `providers.ini`. |
-| PayPal profile save | Only `country` and `locale` in `[providers.paypal]` change atomically; the next proxy-config read reports the new regional key pair. |
+| Unsupported proxy stage | `PUT /api/config/proxy` and `POST /api/config/proxy/test` return HTTP 400 without writing `.env` or opening a test request. |
+| Missing or unsupported PayPal country, or locale outside the whitelist | Profile API and direct PayPal request return HTTP 400 without rewriting `providers.ini`. |
+| PayPal profile save | Only `country` and whitelisted `locale` in `[providers.paypal]` change atomically; the next proxy-config read reports the new regional key pair. |
 | No changed proxy-config field | `PUT /api/config/proxy` returns HTTP 400 without writing `.env`. |
 | Invalid proxy input | `PUT /api/config/proxy` returns HTTP 400 and leaves `.env` unchanged. |
-| No dedicated Provider proxy | `POST /api/config/proxy/test` returns HTTP 400; it must not test a generic proxy. |
+| No dedicated Provider/stage proxy | `POST /api/config/proxy/test` returns HTTP 400; it must not test a generic proxy or inferred stage fallback. |
 | IP-echo transport failure | Test returns `{ ok: false }` with a credential-free error class. |
 | Checkout challenge or transport failure | Rotate through at most `MAX_CHECKOUT_PROXY_ATTEMPTS` candidates from the same provider region. |
 | PayPal absent from Checkout methods | Return HTTP 409 before a successful facade result is persisted. |
@@ -226,14 +292,23 @@ submits no query parameters to the event endpoint.
   `th-TH` headers, and only `OPENAI_PAY_PAYPAL_TH_*` dedicated candidates;
   the BR profile follows the same contract with BRL, `pt-BR`, and
   `OPENAI_PAY_PAYPAL_BR_*`.
+- Good: UPI settings show visible checkout/promotion/provider stages where
+  provider remains `OPENAI_PAY_INDIA_PROXY_POOL`, promotion is
+  `OPENAI_PAY_INDIA_PROMOTION_PROXY_POOL`, and no configured proxy value is
+  returned to the page.
 - Good: GCash config shows `OPENAI_PAY_PH_PROXY_POOL` and a pool count without
   exposing any configured entry, then writes validated replacements atomically.
+- Good: a configured iDEAL checkout-stage pool overrides the legacy iDEAL
+  provider pool only for Checkout creation; Stripe/provider and approve keep
+  their stage-specific or provider-stage candidates.
 - Base: a client only configures `EXTRACT_LINK_API_BASE` and receives normal
   progress events.
 - Bad: route handlers map public provider aliases locally or place proxy
   credentials in `providers.ini`.
 - Bad: loading a raw proxy URL into a configuration form, logging it, or
   testing a generic fallback when the selected provider has no dedicated proxy.
+- Bad: implementing a provider-specific promotion update path when the shared
+  stage-aware `update_checkout_promotion` contract covers the same request.
 - Bad: selecting a PayPal billing country from a proxy string, accepting an
   arbitrary locale for a selected country, or adding payment confirmation to
   the Checkout-link lifecycle.
@@ -256,6 +331,9 @@ submits no query parameters to the event endpoint.
   legacy `.upi-nav` menu.
 - Bad: creating a second task HTML page or allowing a queue page's global
   `button, a` rule to restyle shared-shell links.
+- Good: debug-generation task cards stay compact enough to show several
+  entries in the progress panel by truncating long IDs and clamping long error
+  summaries, while the modal remains the place for full logs/details.
 
 ### 6. Tests Required
 
@@ -290,12 +368,15 @@ submits no query parameters to the event endpoint.
 - Browser verification covers desktop and 390px widths, active states,
   generation/debug/queue routing, internal horizontal scrolling, document
   width, and console errors.
-- Proxy tests assert PIX uses BR/VN, UPI uses IN, Kakao Pay uses KR, Twint
-  uses its existing dedicated CH Swiss pool, GoPay puts its dedicated approval
-  pool ahead of the maintained JP fallback, GrabPay's dedicated PH pool and
-  fallback both precede GoPay and generic candidates, iDEAL uses NL, and GCash
-  prefers its dedicated PH pool without including live proxy hosts or
-  credentials.
+- Proxy tests assert PIX uses BR/VN/BR/BR, UPI uses IN/VN/IN/IN, Kakao Pay
+  uses KR/VN/KR/KR, Twint uses CH/VN/CH/CH, iDEAL uses NL/VN/NL/NL, GCash
+  uses PH/VN/PH/PH, GrabPay uses PH/VN/PH/PH, and GoPay keeps ID checkout
+  with JP provider/approve fallback. Stage tests must cover masked
+  `stages[]` projection, stage-specific `.env` writes, checkout-stage
+  precedence over provider-stage pools, approve-stage override/fallback, and
+  absence of live proxy hosts or credentials. Visible-stage tests assert
+  PayPal exposes provider/promotion, while UPI, PIX, iDEAL, Kakao Pay, and
+  GCash expose checkout/promotion/provider.
 - Twint queue-page tests assert public `data-provider-page="twint"` maps to
   native `swiss` before any queue API request and retains Twint labels.
 - PayPal tests assert US alias compatibility plus TH/BR country, locale,
@@ -311,7 +392,7 @@ submits no query parameters to the event endpoint.
   so a local configured pool must never influence a fixture assertion.
 - Proxy-configuration tests assert masked reads, atomic `.env` writes that
   preserve unrelated lines, runtime updates, invalid-input rollback, and
-  credential-free dedicated IP-echo testing.
+  credential-free dedicated IP-echo testing for a requested stage only.
 - Payment-page tests assert terminal failure extraction keeps the nested Stripe
   error code, raises HTTP 502 on the first poll, and classifies UPI as
   `confirm-failed`.
@@ -349,6 +430,25 @@ return {"configured": bool(value), "env_key": "OPENAI_PAY_PH_PROXY"}
 
 The configuration boundary receives raw values only on a changed `PUT` field;
 read, save, test, and log projections stay credential-free.
+
+#### Wrong
+
+```javascript
+renderProxyPool(config.pool);
+await fetch("/api/config/proxy/test", { body: JSON.stringify({ provider }) });
+```
+
+#### Correct
+
+```javascript
+for (const stage of config.visible_stages || config.stages) renderProxyStage(stage);
+await fetch("/api/config/proxy/test", { body: JSON.stringify({ provider, stage }) });
+```
+
+The settings page treats `checkout`, `promotion`, `provider`, and `approve` as
+separate backend stage contracts, but renders the provider-specific visible
+projection. The top-level `fallback` and `pool` are only the legacy
+provider-stage alias.
 
 #### Wrong
 

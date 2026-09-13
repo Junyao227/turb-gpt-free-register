@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import unquote, urljoin, urlparse
@@ -12,9 +13,19 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 
 from config import roxybrowser as _cfg
-from config.proxy import normalize_proxy_url
+from config.proxy import mask_proxy_url, normalize_proxy_url
 
 logger = logging.getLogger(__name__)
+
+_CREATE_PROFILE_LOCK = threading.Lock()
+_CREATE_BUSY_HINTS = (
+    "\u6b63\u5728\u521b\u5efa",  # 正在创建
+    "\u521b\u5efa\u4e2d",  # 创建中
+    "\u8bf7\u7a0d\u7b49",  # 请稍等
+    "creating",
+    "in progress",
+    "busy",
+)
 
 
 @dataclass
@@ -25,6 +36,7 @@ class RoxyOpenResult:
     webdriver_url: str | None = None
     ws_endpoint: str | None = None
     created_by_run: bool = False
+    proxy_used: str | None = None
 
 
 def _strip_slashes(value: str) -> str:
@@ -36,16 +48,7 @@ def _join_url(base: str, path: str) -> str:
 
 
 def _mask_proxy(proxy_url: str) -> str:
-    try:
-        normalized = normalize_proxy_url(proxy_url)
-    except ValueError:
-        return "***"
-    parsed = urlparse(normalized)
-    if parsed.username or parsed.password:
-        host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
-        return f"{parsed.scheme}://***:***@{host}{port}"
-    return str(proxy_url or "").strip()
+    return mask_proxy_url(proxy_url)
 
 
 def _proxy_url_to_roxy_info(proxy_url: str) -> dict:
@@ -184,11 +187,17 @@ def _random_roxy_profile_name() -> str:
     return f"{prefix}-{int(time.time() * 1000)}-{random.randrange(0x10000):04x}"
 
 
+def _is_create_busy_error(exc: Exception) -> bool:
+    text = str(exc or "").casefold()
+    return any(hint.casefold() in text for hint in _CREATE_BUSY_HINTS)
+
+
 class RoxyBrowserClient:
     def __init__(self, api_base: str | None = None, token: str | None = None):
         self.api_base = (api_base or _cfg.ROXY_API_BASE).strip()
         self.token = (token if token is not None else _cfg.ROXY_API_TOKEN).strip()
         self.http = requests.Session()
+        self._last_created_proxy_url: str | None = None
         if self.token:
             # 官方文档要求所有接口请求头必须加 token。这里同时兼容 token / Authorization。
             self.http.headers.update({
@@ -197,6 +206,28 @@ class RoxyBrowserClient:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             })
+
+    def _create_profile_request(self, body: dict) -> dict:
+        max_wait = max(0.0, float(getattr(_cfg, "ROXY_CREATE_BUSY_MAX_WAIT", 60) or 60))
+        retry_delay = max(0.5, float(getattr(_cfg, "ROXY_CREATE_BUSY_RETRY_DELAY", 3) or 3))
+        attempt = 1
+        with _CREATE_PROFILE_LOCK:
+            deadline = time.monotonic() + max_wait
+            while True:
+                try:
+                    if attempt > 1:
+                        logger.info("[Roxy] create busy retry: attempt=%s max_wait=%ss", attempt, max_wait)
+                    return self.request(_cfg.ROXY_CREATE_METHOD, _cfg.ROXY_CREATE_PATH, json_body=body)
+                except RuntimeError as exc:
+                    if not _is_create_busy_error(exc):
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    delay = min(retry_delay, remaining)
+                    logger.warning("[Roxy] create is busy, retrying in %.1fs: attempt=%s error=%s", delay, attempt, exc)
+                    time.sleep(delay)
+                    attempt += 1
 
     @staticmethod
     def _is_retryable_error(exc: Exception) -> bool:
@@ -416,6 +447,7 @@ class RoxyBrowserClient:
         return {"ok": False, "items": [], "errors": errors}
 
     def create_profile(self, payload: dict | None = None) -> str:
+        self._last_created_proxy_url = None
         body = dict(getattr(_cfg, "ROXY_PROFILE_CREATE_PAYLOAD", {}) or {})
         random_name_enabled = bool(getattr(_cfg, "ROXY_RANDOM_PROFILE_NAME_ON_CREATE", True))
         if random_name_enabled:
@@ -449,6 +481,7 @@ class RoxyBrowserClient:
             if proxy_url:
                 proxy_info = _proxy_url_to_roxy_info(proxy_url)
                 body["proxyInfo"] = proxy_info
+                self._last_created_proxy_url = proxy_url
                 logger.info(
                     "[Roxy] 创建环境启用代理池：proxy=%s type=%s host=%s port=%s",
                     _mask_proxy(proxy_url),
@@ -475,7 +508,7 @@ class RoxyBrowserClient:
             body.get("osVersion") or "-",
             random_os_enabled,
         )
-        result = self.request(_cfg.ROXY_CREATE_METHOD, _cfg.ROXY_CREATE_PATH, json_body=body)
+        result = self._create_profile_request(body)
         profile_id = _first(result, [
             ("id",), ("dirId",), ("dir_id",), ("profile_id",), ("profileId",), ("browser_id",),
             ("data", "id"), ("data", "dirId"), ("data", "dir_id"),
@@ -504,9 +537,11 @@ class RoxyBrowserClient:
 
         pid = configured_pid
         created_by_run = False
+        proxy_used = None
         if not pid:
             pid = self.create_profile()
             created_by_run = True
+            proxy_used = self._last_created_proxy_url
             logger.info("[Roxy] 已创建临时环境：%s", pid)
 
         path = str(_cfg.ROXY_OPEN_PATH).format(profile_id=pid)
@@ -548,6 +583,7 @@ class RoxyBrowserClient:
             webdriver_url=webdriver_url,
             ws_endpoint=ws_endpoint,
             created_by_run=created_by_run,
+            proxy_used=proxy_used,
         )
 
     def close_profile(self, profile_id: str) -> None:

@@ -65,7 +65,9 @@ def test_debug_generate_asset_exists():
     assert "new Error(data.detail" not in text
     assert "data-job-id" in text
     assert ".task-card.active" in text
-    assert "max-height:430px" in text
+    assert "max-height:560px" in text
+    assert ".task-card code { min-height:28px" in text
+    assert "-webkit-line-clamp:2" in text
 
 
 def test_main_index_task_table_supports_click_row_and_richer_logs():
@@ -85,6 +87,12 @@ def test_main_index_task_table_supports_click_row_and_richer_logs():
     assert 'id="previewRow"' in text
     assert 'id="previewMedia"' in text
     assert '&provider=${encodeURIComponent(provider)}' in text
+    assert "grid-template-columns: minmax(360px, 400px) minmax(0, 1fr)" in text
+    assert ".control-block .grid > div:nth-child(3)" in text
+    assert ".control-block .main-actions-left button" in text
+    assert ".control-block button," in text
+    assert ".session-action-row" in text
+    assert 'style="min-height:40px' not in text
 
 
 def test_console_shell_uses_registry_backed_two_level_navigation():
@@ -95,8 +103,10 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
         "debug-generate.html",
         "stats.html",
         "qr.html",
+        "provider-qr.html",
         "kr-qr.html",
         "ch-qr.html",
+        "id-qr.html",
         "in-qr.html",
         "nl-qr.html",
         "ph-qr.html",
@@ -111,9 +121,11 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
         text = read_public_asset(page)
         assert "/assets/app-shell.css" in text
         assert "/assets/app-shell.js" in text
-        assert "v=20260809-shell5" in text
+        assert "v=20260810-shell8" in text
 
     assert 'fetch("/api/providers"' in shell_js
+    assert "paylink-app-shell__logout" not in shell_js
+    assert "logoutButton" not in shell_js
     assert '["generate", "生成中心"]' in shell_js
     assert '["tasks", "任务中心"]' in shell_js
     assert '["queues", "支付队列"]' in shell_js
@@ -132,6 +144,11 @@ def test_console_shell_uses_registry_backed_two_level_navigation():
     assert "flex-wrap: nowrap" in shell_css
     assert "overflow-x: auto" in shell_css
     assert "white-space: nowrap" in shell_css
+    assert ".paylink-app-shell__brand::before" in shell_css
+    assert "--paylink-shell-brand: #ca8a04" in shell_css
+    assert "--paylink-shell-hover: #f3f4f6" in shell_css
+    assert "border-radius: 999px" in shell_css
+    assert "background: #f8fafc" in shell_css
     brand_rules = shell_css.split(".paylink-app-shell__brand {", 1)[1].split("}", 1)[0]
     assert "min-height: 0" in brand_rules
     assert "padding: 0" in brand_rules
@@ -151,17 +168,30 @@ def test_proxy_configuration_page_and_routes_exist():
     assert "/api/config/proxy" in route_paths
     assert "/api/config/proxy/test" in route_paths
     assert "/api/config/provider" in route_paths
-    assert "/assets/app-shell.css?v=20260809-shell5" in settings
-    assert "/assets/app-shell.js?v=20260809-shell5" in settings
-    assert "/assets/settings.js" in settings
+    assert "/assets/app-shell.css?v=20260810-shell8" in settings
+    assert "/assets/app-shell.js?v=20260810-shell8" in settings
+    assert "/assets/settings.css?v=20260809-ui1" in settings
+    assert "/assets/settings.js?v=20260809-stages4" in settings
     assert 'id="paypalProfileSection"' in settings
     assert 'id="paypalCountry"' in settings
+    assert 'id="paypalLocale"' in settings
     assert 'id="saveProfileButton"' in settings
+    assert "config.visible_stages" in settings_js
+    assert "config.locale_choices" in settings_js
     assert 'fetch(`/api/config/proxy?provider=${encodeURIComponent(provider)}`' in settings_js
     assert 'fetch(`/api/config/provider?provider=${encodeURIComponent(provider)}`' in settings_js
     assert 'fetch("/api/config/proxy",' in settings_js
     assert 'fetch("/api/config/proxy/test",' in settings_js
     assert 'fetch("/api/config/provider",' in settings_js
+    assert "locale: paypalLocale.value" in settings_js
+    assert 'data-role="pool-toggle"' in settings_js
+    assert 'data-role="pool-input"' in settings_js
+    assert "proxyPool: proxyPool.value.trim()" in settings_js
+    assert 'data-role="fallback-toggle"' not in settings_js
+    assert 'data-role="fallback-input"' not in settings_js
+    assert "fallbackProxy" not in settings_js
+    assert "更新备用代理" not in settings_js
+    assert "备用代理地址" not in settings_js
 
 
 def test_home_and_debug_pages_accept_public_provider_query_values():
@@ -186,6 +216,14 @@ def test_home_and_debug_pages_accept_public_provider_query_values():
     assert 'new CustomEvent("paylink:provider-change"' in debug
     assert 'function currentConsoleView()' in home
     assert 'view === "tasks" ? "任务中心" : line.title' in home
+    assert 'id="linkTypeLabel"' in home
+    assert 'id="linkTypeHint"' in home
+    assert 'function loadActivePaypalProfile()' in home
+    assert 'apiFetch("/api/config/provider?provider=paypal")' in home
+    assert '$("linkType").replaceChildren(option);' in home
+    assert '$("linkType").disabled = true;' in home
+    assert '$("linkTypeLabel").textContent = "账单地区";' in home
+    assert '由配置页保存的 PayPal 地区决定' in home
 
 
 def test_html_responses_disable_browser_storage_cache():
@@ -202,6 +240,33 @@ def test_html_responses_disable_browser_storage_cache():
     assert html.headers["pragma"] == "no-cache"
     assert html.headers["expires"] == "0"
     assert "cache-control" not in asset.headers
+
+
+def test_payment_queue_pages_share_card_ui_assets():
+    queue_pages = [
+        "qr.html",
+        "provider-qr.html",
+        "kr-qr.html",
+        "ch-qr.html",
+        "id-qr.html",
+        "in-qr.html",
+        "nl-qr.html",
+        "ph-qr.html",
+    ]
+    qr_css = read_public_asset("assets/qr.css")
+
+    for page in queue_pages:
+        text = read_public_asset(page)
+        assert "/assets/qr.css?v=20260810-queue-ui1" in text
+
+    assert "width: min(1380px, calc(100vw - 32px))" in qr_css
+    assert "box-shadow: var(--shadow)" in qr_css
+    assert ".page button, .page a" in qr_css
+    assert "button, a {" not in qr_css
+    assert "body[data-provider-page] .queue" in qr_css
+    assert "grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr))" in qr_css
+    assert ".provider-frame-wrap" in qr_css
+    assert "grid-column: 1 / -1" in qr_css
 
 
 def test_upi_frontend_shell_assets_exist():

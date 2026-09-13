@@ -154,8 +154,8 @@
 
       .console-shell {
         display: grid;
-        grid-template-columns: 340px minmax(0, 1fr);
-        gap: 18px;
+        grid-template-columns: minmax(360px, 400px) minmax(0, 1fr);
+        gap: 20px;
         margin-top: 18px;
         align-items: start;
       }
@@ -175,16 +175,17 @@
 
       .control-block,
       .work-block {
-        padding: 16px;
-        border: 1px solid #d8d8dc;
-        border-radius: 16px;
-        background: #fff;
+        padding: 18px;
+        border: 1px solid #e5e7eb;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow-md);
       }
 
       .control-block-title,
       .work-block-title {
-        margin: 0 0 10px;
-        font-size: 14px;
+        margin: 0 0 14px;
+        font-size: 13px;
         font-weight: 800;
         color: #111;
       }
@@ -197,10 +198,29 @@
         flex-wrap: wrap;
       }
 
+      .session-action-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 10px 0 8px;
+      }
+
+      .session-action-row button {
+        min-width: 150px;
+      }
+
       label {
         display: block;
         margin: 18px 0 8px;
         font-weight: 700;
+      }
+
+      .control-block label {
+        margin: 0 0 7px;
+        color: #262626;
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.35;
       }
 
       .label-inline {
@@ -217,6 +237,20 @@
         color: var(--ink);
         font: inherit;
         padding: 12px;
+      }
+
+      .control-block input,
+      .control-block select,
+      .control-block textarea {
+        border-color: #d4d4d4;
+        border-radius: 14px;
+        font-size: 14px;
+      }
+
+      .control-block input,
+      .control-block select {
+        min-height: 42px;
+        padding: 9px 12px;
       }
 
       textarea {
@@ -241,10 +275,30 @@
         font-size: 13px;
       }
 
+      .control-block .muted,
+      .control-block .token-hint {
+        margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
       .grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
+      }
+
+      .control-block .grid {
+        gap: 12px;
+        align-items: start;
+      }
+
+      .control-block .grid > div {
+        min-width: 0;
+      }
+
+      .control-block .grid > div:nth-child(3) {
+        grid-column: 1 / -1;
       }
 
       .grid-3 {
@@ -286,19 +340,28 @@
 
       .main-actions {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        margin-top: 18px;
+        margin-top: 16px;
       }
 
       .main-actions-left,
       .main-actions-right {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         align-items: center;
         flex-wrap: wrap;
+      }
+
+      .control-block .main-actions-left {
+        width: 100%;
+        flex-wrap: nowrap;
+      }
+
+      .control-block .main-actions-left button {
+        flex: 1 1 0;
       }
 
       button,
@@ -340,6 +403,15 @@
       .btn.disabled {
         opacity: 0.58;
         pointer-events: none;
+      }
+
+      .control-block button,
+      .control-block .btn {
+        min-height: 40px;
+        padding: 9px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 800;
       }
 
       .status {
@@ -832,8 +904,8 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="/assets/app-shell.css?v=20260809-shell5" />
-    <script defer src="/assets/app-shell.js?v=20260809-shell5"></script>
+    <link rel="stylesheet" href="/assets/app-shell.css?v=20260810-shell8" />
+    <script defer src="/assets/app-shell.js?v=20260810-shell8"></script>
   </head>
   <body>
     <div class="page">
@@ -873,7 +945,7 @@
                     <div class="muted">本轮计划总共生成多少个任务。</div>
                   </div>
                   <div>
-                    <label for="linkType">线路</label>
+                    <label id="linkTypeLabel" for="linkType">线路</label>
                     <select id="linkType">
                       <option value="pix" selected>巴西线路（BR / BRL）</option>
                       <option value="korea">韩国线路（KR / KRW）</option>
@@ -885,13 +957,15 @@
                       <option value="paypal">美国 PayPal（US / USD）</option>
                       <option value="gopay">印尼线路（ID / IDR）</option>
                     </select>
-                    <div class="muted">按线路返回对应的支付链接或支付页。</div>
+                    <div id="linkTypeHint" class="muted">按线路返回对应的支付链接或支付页。</div>
                   </div>
                 </div>
                 <div class="form-block">
                   <div class="row-between">
                     <label class="label-inline" for="accessToken">Access Token 或 session JSON（调试用）</label>
-                    <button id="copySessionUrl" class="secondary" type="button" style="min-height:40px;padding:8px 12px;font-size:14px">复制 Session 地址</button>
+                  </div>
+                  <div class="session-action-row">
+                    <button id="copySessionUrl" class="secondary" type="button">复制 Session 地址</button>
                   </div>
                   <textarea id="accessToken" autocomplete="off" spellcheck="false" placeholder="留空时默认自动从 ZC 号池取号。需要手动模式时，可粘贴 accessToken 或 session JSON。"></textarea>
                   <div id="tokenMeta" class="token-hint">这里不影响主按钮；只有点击“手动 AT 生成”时才会使用你填写的 AT。</div>
@@ -983,6 +1057,10 @@
                   <option value="KR">韩国 KR</option>
                   <option value="CH">瑞士 CH</option>
                   <option value="IN">印度 IN</option>
+                  <option value="NL">荷兰 NL</option>
+                  <option value="PH">菲律宾 PH</option>
+                  <option value="US">美国 US</option>
+                  <option value="TH">泰国 TH</option>
                   <option value="ID">印度尼西亚 ID</option>
                 </select>
                 <input id="currency" value="BRL" />
@@ -1199,6 +1277,17 @@
           resultLabel: "菲律宾 GCash 支付页",
           statusText: "菲律宾 GCash 支付页已生成",
         },
+        grabpay: {
+          title: "菲律宾 GrabPay 线路",
+          icon: "PH",
+          linkLabel: "GrabPay 支付页（菲律宾 PHP）",
+          country: "PH",
+          currency: "PHP",
+          locale: "en",
+          promoEnabled: true,
+          resultLabel: "菲律宾 GrabPay 支付页",
+          statusText: "菲律宾 GrabPay 支付页已生成",
+        },
         paypal: {
           title: "美国 PayPal 线路",
           icon: "US",
@@ -1220,17 +1309,6 @@
           promoEnabled: true,
           resultLabel: "GoPay Checkout 链接",
           statusText: "印度尼西亚 GoPay 提交结果已返回",
-        },
-        grabpay: {
-          title: "菲律宾 GrabPay 线路",
-          icon: "PH",
-          linkLabel: "GrabPay 提交结果（菲律宾 PHP）",
-          country: "PH",
-          currency: "PHP",
-          locale: "en-PH",
-          promoEnabled: true,
-          resultLabel: "GrabPay Checkout 链接",
-          statusText: "菲律宾 GrabPay 提交结果已返回",
         },
       };
 
@@ -1255,9 +1333,66 @@
 
       const PUBLIC_TYPE_BY_NATIVE = { korea: "kakao_pay", swiss: "twint" };
       const NATIVE_TYPE_BY_PUBLIC = { kakao_pay: "korea", twint: "swiss" };
+      const ORIGINAL_LINE_OPTIONS = Array.from($("linkType").options).map((item) => ({
+        value: item.value,
+        text: item.textContent || item.value,
+      }));
+      let paypalProfileReady = true;
+      let activePaypalProfile = null;
 
       function publicProviderType(nativeType) {
         return PUBLIC_TYPE_BY_NATIVE[nativeType] || nativeType;
+      }
+
+      function resetLineTypeOptions() {
+        if (!$("linkType").disabled) return;
+        const currentValue = $("linkType").value;
+        const options = ORIGINAL_LINE_OPTIONS.map((item) => {
+          const option = document.createElement("option");
+          option.value = item.value;
+          option.textContent = item.text;
+          return option;
+        });
+        $("linkType").replaceChildren(...options);
+        $("linkType").disabled = false;
+        if (LINE_CONFIG[currentValue]) $("linkType").value = currentValue;
+      }
+
+      function paypalProfileLabel(config) {
+        const country = String(config?.country || LINE_CONFIG.paypal.country || "US").toUpperCase();
+        const currency = String(config?.currency || LINE_CONFIG.paypal.currency || "USD").toUpperCase();
+        const locale = String(config?.locale || LINE_CONFIG.paypal.locale || "en");
+        return `${country} / ${currency} / ${locale}`;
+      }
+
+      async function loadActivePaypalProfile() {
+        if ($("linkType").value !== "paypal") {
+          paypalProfileReady = true;
+          return;
+        }
+        paypalProfileReady = false;
+        setStatus("正在读取 PayPal 账单 Profile...");
+        try {
+          const response = await apiFetch("/api/config/provider?provider=paypal");
+          const data = await readJsonResponse(response);
+          if (!response.ok || !data.ok) {
+            throw new Error(data.detail || "读取 PayPal 账单 Profile 失败");
+          }
+          const config = data.config || {};
+          activePaypalProfile = config;
+          LINE_CONFIG.paypal.country = String(config.country || "US").toUpperCase();
+          LINE_CONFIG.paypal.currency = String(config.currency || "USD").toUpperCase();
+          LINE_CONFIG.paypal.locale = String(config.locale || "en");
+          LINE_CONFIG.paypal.icon = LINE_CONFIG.paypal.country;
+          LINE_CONFIG.paypal.title = `${LINE_CONFIG.paypal.country} PayPal 线路`;
+          LINE_CONFIG.paypal.linkLabel = `PayPal Checkout（${LINE_CONFIG.paypal.country} / ${LINE_CONFIG.paypal.currency}）`;
+          paypalProfileReady = true;
+          applyLineConfig();
+        } catch (error) {
+          activePaypalProfile = null;
+          paypalProfileReady = false;
+          setStatus(error instanceof Error ? error.message : String(error), true);
+        }
       }
 
       function applyProviderFromUrl() {
@@ -1281,6 +1416,19 @@
         const title = document.querySelector(".title-row h1");
         const icon = document.querySelector(".title-icon");
         document.body.dataset.paylinkSection = view;
+        if ($("linkType").value === "paypal") {
+          const option = document.createElement("option");
+          option.value = "paypal";
+          option.textContent = paypalProfileLabel(activePaypalProfile);
+          $("linkType").replaceChildren(option);
+          $("linkType").disabled = true;
+          $("linkTypeLabel").textContent = "账单地区";
+          $("linkTypeHint").textContent = "由配置页保存的 PayPal 地区决定；这里只显示当前 Profile，不根据代理池推断。";
+        } else {
+          resetLineTypeOptions();
+          $("linkTypeLabel").textContent = "线路";
+          $("linkTypeHint").textContent = "按线路返回对应的支付链接或支付页。";
+        }
         if (title) title.textContent = view === "tasks" ? "任务中心" : line.title;
         if (icon) icon.textContent = line.icon;
         $("billingCountry").value = line.country;
@@ -1600,8 +1748,8 @@
       }
 
       function walletLineLabel(linkType) {
-        const labels = { gcash: "GCash", gopay: "GoPay", grabpay: "GrabPay" };
-        return labels[String(linkType || "").trim()] || "钱包";
+        const labels = { gcash: "GCash", grabpay: "GrabPay", gopay: "GoPay" };
+        return labels[String(linkType || "").trim()] || "GoPay";
       }
 
       function resolveTaskResultLink(data) {
@@ -1627,7 +1775,7 @@
       }
 
       function resolveMainLinkLabel(data, line, providerReady) {
-        if (walletLineNeedsProviderLink(data.link_type)) return `${walletLineLabel(data.link_type)} 跳转链接`;
+        if (["gopay", "gcash", "grabpay"].includes(data.link_type)) return `${walletLineLabel(data.link_type)} 跳转链接`;
         if (providerReady) {
           if (data.link_type === "pix") return "PIX 支付页";
           return line.resultLabel;
@@ -1637,7 +1785,7 @@
       }
 
       function resolveOpenLinkText(data, providerReady) {
-        if (walletLineNeedsProviderLink(data.link_type)) return `${providerReady ? "打开" : "等待"} ${walletLineLabel(data.link_type)}`;
+        if (["gopay", "gcash", "grabpay"].includes(data.link_type)) return `${providerReady ? "打开" : "等待"} ${walletLineLabel(data.link_type)}`;
         if (providerReady && data.link_type === "upi") return "查看二维码";
         if (providerReady) return "打开支付页";
         const checkoutUrl = String(data.checkout_url || "").trim();
@@ -1647,7 +1795,7 @@
       }
 
       function resolveCopyLinkText(data, providerReady) {
-        if (walletLineNeedsProviderLink(data.link_type)) return providerReady ? `复制 ${walletLineLabel(data.link_type)}` : `等待 ${walletLineLabel(data.link_type)}`;
+        if (["gopay", "gcash", "grabpay"].includes(data.link_type)) return providerReady ? `复制 ${walletLineLabel(data.link_type)}` : `等待 ${walletLineLabel(data.link_type)}`;
         if (providerReady && data.link_type === "upi") return "复制二维码内容";
         if (providerReady) return "复制支付页";
         const checkoutUrl = String(data.checkout_url || "").trim();
@@ -1658,7 +1806,7 @@
 
       function resolveExtractStatus(data, line, failureCount, providerReady) {
         if (failureCount) return `部分成功，失败 ${failureCount} 个`;
-        if (walletLineNeedsProviderLink(data.link_type)) {
+        if (["gopay", "gcash", "grabpay"].includes(data.link_type)) {
           const walletLabel = walletLineLabel(data.link_type);
           const approvalResult = String(data.approval_result || "").trim() || "-";
           const submissionState = String(data.submission_state || "").trim() || "-";
@@ -1747,7 +1895,7 @@
         setRowValue("pixQueueRow", "pixQueueHint", queueMessage);
         $("result").classList.add("show");
         setLinkEnabled(Boolean(currentLongUrl));
-        const walletLinkType = walletLineNeedsProviderLink(data.link_type);
+        const walletLinkType = ["gopay", "gcash", "grabpay"].includes(data.link_type);
         const doneText = walletLinkType ? (providerReady ? `${walletLineLabel(data.link_type)} 跳转链接已返回` : `${walletLineLabel(data.link_type)} 未成功`) : "生成完成";
         setStatus(`${modeText}完成：成功 ${successCount} 个，失败 ${failureCount} 个。`);
         setProgress(100, doneText, Boolean(walletLinkType && !providerReady));
@@ -1941,6 +2089,10 @@
       }
 
       async function runGenerateFlow({ autoClaimZc, accessToken }) {
+        if ($("linkType").value === "paypal" && !paypalProfileReady) {
+          setStatus("正在读取 PayPal 账单地区，请稍候。", true);
+          return;
+        }
         const concurrency = Math.max(1, Math.min(20, Number($("concurrency").value || "1") || 1));
         const totalCount = autoClaimZc
           ? Math.max(1, Math.min(200, Number($("totalCount").value || "1") || 1))
@@ -2052,6 +2204,7 @@
       loadZcConfig();
       applyProviderFromUrl();
       applyLineConfig();
+      void loadActivePaypalProfile();
       refreshServiceStats();
       refreshTaskList();
       (async () => {
@@ -2082,6 +2235,7 @@
       $("linkType").addEventListener("change", () => {
         applyLineConfig();
         syncProviderToUrl();
+        if ($("linkType").value === "paypal") void loadActivePaypalProfile();
         if (currentConsoleView() === "tasks") refreshTaskList(1);
       });
       $("concurrency").addEventListener("change", saveZcConfig);
