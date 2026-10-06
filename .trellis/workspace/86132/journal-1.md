@@ -171,3 +171,36 @@ Added explicit US, Thailand, and Brazil PayPal Checkout profiles with regional p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: October upstream sync preserving local extensions
+
+**Date**: 2026-10-06
+**Task**: October upstream sync preserving local extensions
+**Branch**: `main`
+
+### Summary
+
+Merged upstream ffcda12 into local main, resolved 14 textual conflicts and auto-merge duplication across config, dwell helpers and UI. Preserved CDK, email pool, Pay153 and Paylink features. Root tests: 412 passed with 5 subtests; Paylink: 137 passed. Both inline scripts parsed, authenticated page/API smoke passed. WebUI started on port 5001, PID 9984, login HTTP 200. No remote push.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d1e9d99` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
