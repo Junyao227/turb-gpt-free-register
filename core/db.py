@@ -500,12 +500,56 @@ def _account_filter_sql(
             where.append(f"{plan_expr} = ?")
             where.append(f"{trial_expr} IN (?, ?, ?, ?)")
             params.extend(["free", "1", "true", "yes", "on"])
-        elif plan in {"free_no_trial", "free_without_trial", "free_not_trial"}:
-            # 只匹配已明确查询到“不具备 Plus 试用资格”的 free 账号；字段缺失表示资格未知，不命中。
-            trial_expr = "lower(COALESCE(CAST(json_extract(payload, '$.plus_trial_eligible') AS TEXT), ''))"
+        elif plan in {"promo", "promotion", "plan_promo", "eligible_promo"} or plan.startswith("promo:"):
+            # 当前套餐必须是 free，并且任意套餐存在至少一个可用优惠活动；
+            # 不限定 Plus。eligible_promo_campaigns 是以套餐名为 key 的对象。
+            promo_expr = "json_extract(payload, '$.eligible_promo_campaigns')"
             where.append(f"{plan_expr} = ?")
-            where.append(f"{trial_expr} IN (?, ?, ?, ?)")
-            params.extend(["free", "0", "false", "no", "off"])
+            where.append("json_type(payload, '$.eligible_promo_campaigns') = 'object'")
+            where.append(f"EXISTS (SELECT 1 FROM json_each({promo_expr}))")
+            params.append("free")
+            promo_parts = plan.split(":") if plan.startswith("promo:") else []
+            promo_type = promo_parts[1].strip()[:64] if len(promo_parts) > 1 else ""
+            promo_discount = promo_parts[2].strip()[:16] if len(promo_parts) > 2 else ""
+            conditions: list[str] = []
+            condition_params: list[Any] = []
+            if promo_type and promo_type not in {"*", "all", "any"}:
+                canonical = promo_type.lower().replace("-", "").replace("_", "").replace(" ", "")
+                if canonical.startswith("chatgpt"):
+                    canonical = canonical[7:]
+                if canonical.endswith("plan"):
+                    canonical = canonical[:-4]
+                normalized_key = "lower(replace(replace(replace(j.key, '-', ''), '_', ''), ' ', ''))"
+                normalized_name = (
+                    "lower(replace(replace(replace(COALESCE(CAST(json_extract(j.value, '$.metadata.plan_name') AS TEXT), ''), "
+                    "'-', ''), '_', ''), ' ', ''))"
+                )
+                conditions.append(
+                    f"({normalized_key} = ? OR {normalized_name} IN (?, ?, ?))"
+                )
+                condition_params.extend([canonical, canonical, f"{canonical}plan", f"chatgpt{canonical}plan"])
+            if promo_discount:
+                try:
+                    discount_value = float(promo_discount.rstrip("%"))
+                except ValueError:
+                    discount_value = None
+                if discount_value is not None:
+                    conditions.append("CAST(json_extract(j.value, '$.metadata.discount.percentage') AS REAL) = ?")
+                    condition_params.append(discount_value)
+            if conditions:
+                where.append(
+                    f"EXISTS (SELECT 1 FROM json_each({promo_expr}) AS j WHERE "
+                    + " AND ".join(conditions) + ")"
+                )
+                params.extend(condition_params)
+        elif plan in {"free_no_trial", "free_without_trial", "free_not_trial"}:
+            # 只匹配已成功查询且没有任何套餐优惠的 free 账号；字段缺失代表
+            # 尚未得到完整优惠结果，不应归入“不可试用套餐”。
+            promo_expr = "json_extract(payload, '$.eligible_promo_campaigns')"
+            where.append(f"{plan_expr} = ?")
+            where.append("json_type(payload, '$.eligible_promo_campaigns') = 'object'")
+            where.append(f"NOT EXISTS (SELECT 1 FROM json_each({promo_expr}))")
+            params.append("free")
         elif plan == "free":
             where.append(f"{plan_expr} = ?")
             params.append("free")
@@ -586,8 +630,18 @@ def _outlook_line(row: dict) -> str:
 def _generic_api_email_line(row: dict) -> str:
     return "----".join([
         row.get("email") or "",
-        row.get("code_url") or "",
+        _normalize_generic_api_code_url(row.get("code_url")),
     ])
+
+
+def _normalize_generic_api_code_url(value: object) -> str:
+    """修复导入文本中误粘贴到 URL 前面的短横线。"""
+    url = str(value or "").strip()
+    if url.startswith("-"):
+        candidate = url.lstrip("-")
+        if candidate.lower().startswith(("http://", "https://")):
+            return candidate
+    return url
 
 
 def _imap_email_line(row: dict) -> str:
@@ -655,6 +709,68 @@ def _account_line(row: dict) -> str:
     if totp:
         parts.append(totp)
     return "----".join(parts)
+
+
+# “完整导出”里 2FA 段固定的站点占位（需求指定的固定文案）。
+_TWOFA_EXPORT_URL = "https://2fa.run/"
+
+
+def _account_full_export_line(row: dict) -> str:
+    """生成“完整导出”单行，格式严格按需求：
+
+        邮箱---邮箱接码API---密码---https://2fa.run/----2FA:密钥
+
+    - 邮箱接码API：接码所用的“完整接码链接格式”。generic_api 账号直接输出邮箱池里
+      存的 code_url（取码地址，如 http://127.0.0.1:5055/code?email=xxx@domain）；
+      其它来源（gptmail/outlook/remail…）保留来源标识。
+    - 密码：ChatGPT 账号自身登录密码（registration_password）。
+    - 2FA：固定前缀 “2FA:” 拼接 TOTP 密钥。
+    分隔符：前四段之间为 “---”，2FA 段之前为 “----”（与需求保持一致）。
+    """
+    email = str(row.get("email") or "").strip()
+    email_api = _resolve_email_api_link(email, str(row.get("email_source") or "").strip())
+    # 仅填 ChatGPT 注册密码；若该账号没有，则留空。
+    password = _extract_registration_password(row)
+    totp = str(row.get("totp_secret") or "").strip()
+    line = "---".join([email, email_api, password, _TWOFA_EXPORT_URL])
+    line = line + "----" + ("2FA:" + totp)
+    return line
+
+
+def _resolve_email_api_link(email: str, email_source: str) -> str:
+    """把“邮箱接码API”字段解析为完整接码链接格式。
+
+    - generic_api：优先取邮箱池里的 code_url（取码地址）作为完整链接；
+      池里没有该邮箱时，按 OmniMail 取码接口约定拼出完整链接
+      （{OMNIMAIL_BASE}/messages?mailbox=<邮箱>），仍然取不到才回退为原文。
+    - 其它来源：原样返回来源标识。
+    """
+    if email_source == "generic_api" and email:
+        try:
+            pool_row = get_generic_api_email_by_email(email)
+        except Exception:
+            pool_row = None
+        if pool_row:
+            link = str(pool_row.get("code_url") or "").strip()
+            if link:
+                return link
+        link = _build_generic_api_code_url(email)
+        if link:
+            return link
+    return email_source
+
+
+def _build_generic_api_code_url(email: str) -> str:
+    """按 OmniMail 取码接口约定拼出完整取码链接；取不到基础地址时返回空串。"""
+    try:
+        # 延迟导入，避免 core.db 与 config 包产生循环依赖。
+        from config.email import OMNIMAIL_BASE
+        base = str(OMNIMAIL_BASE or "").strip().rstrip("/")
+    except Exception:
+        base = ""
+    if not base or not email:
+        return ""
+    return f"{base}/messages?mailbox={email}"
 
 
 def _registered_email_line(row: dict) -> str:
@@ -1054,7 +1170,17 @@ def _save_outlook(rows: list[dict]) -> None:
 
 
 def _load_generic_api_emails() -> list[dict]:
-    return _load_collection("generic_api")
+    rows = _load_collection("generic_api")
+    changed = False
+    for row in rows:
+        original = row.get("code_url")
+        normalized = _normalize_generic_api_code_url(original)
+        if normalized != original:
+            row["code_url"] = normalized
+            changed = True
+    if changed:
+        _save_generic_api_emails(rows)
+    return rows
 
 
 def _save_generic_api_emails(rows: list[dict]) -> None:
@@ -1156,7 +1282,7 @@ def _decorate_account(row: dict) -> dict:
 
 
 def _account_matches_plan_filter(row: dict, plan_filter: str | None = None) -> bool:
-    """账号套餐过滤：支持已开通 Plus、可试用 Plus、不可试用 Plus 的 free 账号。"""
+    """账号套餐过滤：支持已开通 Plus、任意套餐优惠及 free 资格过滤。"""
     f = str(plan_filter or "").strip().lower()
     if not f or f in {"all", "any"}:
         return True
@@ -1170,13 +1296,45 @@ def _account_matches_plan_filter(row: dict, plan_filter: str | None = None) -> b
         if isinstance(trial, str):
             trial = trial.strip().lower() in {"1", "true", "yes", "on"}
         return plan == "free" and bool(trial)
-    if f in {"free_no_trial", "free_without_trial", "free_not_trial"}:
-        if "plus_trial_eligible" not in row:
+    if f in {"promo", "promotion", "plan_promo", "eligible_promo"} or f.startswith("promo:"):
+        campaigns = row.get("eligible_promo_campaigns")
+        if plan != "free" or not isinstance(campaigns, dict) or not campaigns:
             return False
-        trial = row.get("plus_trial_eligible")
-        if isinstance(trial, str):
-            trial = trial.strip().lower() in {"1", "true", "yes", "on"}
-        return plan == "free" and not bool(trial)
+        promo_parts = f.split(":") if f.startswith("promo:") else []
+        wanted = promo_parts[1].strip() if len(promo_parts) > 1 else ""
+        discount_text = promo_parts[2].strip() if len(promo_parts) > 2 else ""
+        try:
+            wanted_discount = float(discount_text.rstrip("%")) if discount_text else None
+        except ValueError:
+            wanted_discount = None
+        if not wanted and wanted_discount is None:
+            return True
+
+        def normalize_promo_type(value: Any) -> str:
+            value = str(value or "").strip().lower().replace("-", "").replace("_", "").replace(" ", "")
+            if value.startswith("chatgpt"):
+                value = value[7:]
+            if value.endswith("plan"):
+                value = value[:-4]
+            return value
+
+        wanted = normalize_promo_type(wanted) if wanted not in {"*", "all", "any"} else ""
+        for key, campaign in campaigns.items():
+            metadata = campaign.get("metadata") if isinstance(campaign, dict) else {}
+            plan_name = metadata.get("plan_name") if isinstance(metadata, dict) else ""
+            type_matches = not wanted or wanted in {normalize_promo_type(key), normalize_promo_type(plan_name)}
+            discount = metadata.get("discount") if isinstance(metadata, dict) else {}
+            percentage = discount.get("percentage") if isinstance(discount, dict) else None
+            try:
+                discount_matches = wanted_discount is None or float(percentage) == wanted_discount
+            except (TypeError, ValueError):
+                discount_matches = False
+            if type_matches and discount_matches:
+                return True
+        return False
+    if f in {"free_no_trial", "free_without_trial", "free_not_trial"}:
+        campaigns = row.get("eligible_promo_campaigns")
+        return plan == "free" and isinstance(campaigns, dict) and not campaigns
     if f == "free":
         return plan == "free"
     return plan == f
@@ -1203,6 +1361,7 @@ def _decorate_outlook(row: dict, account_by_email: dict[str, dict] | None = None
 
 def _decorate_generic_api_email(row: dict, account_by_email: dict[str, dict] | None = None) -> dict:
     out = dict(row)
+    out["code_url"] = _normalize_generic_api_code_url(out.get("code_url"))
     out["copy_line"] = _generic_api_email_line(out)
     out["password"] = out.get("password") or ""
     out["client_id"] = out.get("client_id") or ""
@@ -2018,6 +2177,7 @@ def update_account_plan_check(acc_id: int | None = None, email: str | None = Non
             row["plus_trial_duration_num_periods"] = result.get("plus_trial_duration_num_periods")
             row["plus_trial_duration_period"] = result.get("plus_trial_duration_period")
             row["eligible_offer_ids"] = result.get("eligible_offer_ids") or []
+            row["eligible_promo_campaigns"] = result.get("eligible_promo_campaigns") or {}
             row["plan_last_success_at"] = result.get("checked_at") or _now()
             row["plan_last_success_result_json"] = json.dumps(result, ensure_ascii=False)
         row["plan_check_proxy_mode"] = result.get("proxy_mode")
@@ -2323,6 +2483,7 @@ def list_account_plan_check_statuses(
     fields = (
         "id", "email", "archived",
         "plan_type", "current_plan_type", "plus_trial_eligible",
+        "eligible_promo_campaigns", "plus_trial_discount_percentage",
         "plan_check_status", "plan_check_ok", "plan_check_error",
         "plan_check_trigger", "plan_check_queued_at", "plan_check_started_at",
         "plan_check_completed_at", "plan_checked_at", "plan_last_success_at",
@@ -2397,6 +2558,7 @@ def list_account_plan_check_statuses(
                     "current_plan_type": row.get("current_plan_type"),
                     "plan_type": row.get("plan_type"),
                     "plus_trial_eligible": row.get("plus_trial_eligible"),
+                    "eligible_promo_campaigns": row.get("eligible_promo_campaigns"),
                     "extract_link_status": row.get("extract_link_status"),
                     "codex_status": row.get("codex_status"),
                     "codex_agent_status": row.get("codex_agent_status"),
@@ -3056,7 +3218,7 @@ def import_registered_email_accounts(records: list[dict], source: str | None) ->
                 pool_row["copy_line"] = _imap_email_line(pool_row)
                 original_line = _imap_email_line(pool_row)
             elif source == "generic_api":
-                code_url = (raw.get("code_url") or raw.get("url") or "").strip()
+                code_url = _normalize_generic_api_code_url(raw.get("code_url") or raw.get("url"))
                 if not code_url:
                     skipped += 1
                     continue
@@ -3285,7 +3447,7 @@ def import_generic_api_emails(records: list[dict]) -> tuple[int, int]:
         inserted = skipped = 0
         for raw in records:
             email = (raw.get("email") or "").strip()
-            code_url = (raw.get("code_url") or raw.get("url") or "").strip()
+            code_url = _normalize_generic_api_code_url(raw.get("code_url") or raw.get("url"))
             if not email or not code_url:
                 skipped += 1
                 continue

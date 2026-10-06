@@ -32,6 +32,7 @@ class RoxyBrowserClientCreateBusyTests(unittest.TestCase):
             ROXY_CREATE_USE_PROXY_POOL=False,
             ROXY_CREATE_BUSY_MAX_WAIT=10,
             ROXY_CREATE_BUSY_RETRY_DELAY=1,
+            ROXY_CREATE_INTERVAL=0,
         )
 
     def test_create_profile_retries_roxy_busy_response(self):

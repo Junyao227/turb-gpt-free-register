@@ -102,7 +102,7 @@ CPA_SAVE_CALLBACK_RECEIPT: bool = True
 # 接码平台（手机短信验证用）
 # SMS_PROVIDER:
 #   "grizzly" = GrizzlySMS，接口说明见 https://api.grizzlysms.com
-#   "smsbower" = SMSBower，复用标准 handler_api.php 文本接口
+#   "smsbower"= SMSBower，接口说明见 https://smsbower.app/cn/api?page=client
 #   "l"       = 本地 L 取号服务，接口说明见 L_API.md
 #   "h"       = 本地 H 取号服务，接口说明见 H_API.md
 # ============================================================
@@ -116,8 +116,15 @@ SMS_API_BASE: str = "https://api.grizzlysms.com/stubs/handler_api.php"
 # 留空时 Codex 授权的手机验证步会失败；如不需要 Codex 自动授权，把 ENABLE_CODEX_AUTO=False。
 SMS_API_KEY: str = env_str("SMS_API_KEY", "")
 
-# 服务代码：OpenAI = "dr"
-SMS_SERVICE: str = "openai"
+# SMSBower request options; connection settings are declared below.
+SMSBOWER_USE_V2: bool = False
+SMSBOWER_PROVIDER_IDS: str = ""
+SMSBOWER_EXCEPT_PROVIDER_IDS: str = ""
+SMSBOWER_PHONE_EXCEPTION: str = ""
+SMSBOWER_MIN_PRICE: str = ""
+
+# 服务代码：OpenAI (ChatGPT) = "dr"
+SMS_SERVICE: str = "dr"
 
 # 国家代码：葡萄牙 = "117" / 美国 = "187"
 SMS_COUNTRY: str = "10"
@@ -241,4 +248,9 @@ apply_env_overrides(globals(), {
     'L_SERVICE': 'str',
     'L_COUNTRY': 'str',
     'L_MAX_PRICE': 'str',
+    'SMSBOWER_USE_V2': 'bool',
+    'SMSBOWER_PROVIDER_IDS': 'str',
+    'SMSBOWER_EXCEPT_PROVIDER_IDS': 'str',
+    'SMSBOWER_PHONE_EXCEPTION': 'str',
+    'SMSBOWER_MIN_PRICE': 'str',
 })

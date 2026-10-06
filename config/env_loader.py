@@ -18,7 +18,9 @@ _LOADED = False
 
 # 这些多行列表字段允许用空值显式覆盖为 []。
 # 例如 WebUI 清空代理池后会写入 PROXY_POOL="" / PROXY_POOL="[]"，不能再回退到源码默认本地代理。
-EXPLICIT_EMPTY_LIST_ENV_KEYS = {"PROXY_POOL"}
+EXPLICIT_EMPTY_LIST_ENV_KEYS = {"PROXY_POOL", "PLAN_CHECK_PROXY"}
+# 这些字符串配置的空值具有明确语义，不能回退到源码默认值。
+EXPLICIT_EMPTY_STRING_ENV_KEYS = {"GENERIC_API_PROXY"}
 
 # 统一管理：env key -> 说明（.env.example 用）
 SECRET_ENV_KEYS: dict[str, str] = {
@@ -29,6 +31,8 @@ SECRET_ENV_KEYS: dict[str, str] = {
     "ROXY_API_TOKEN": "RoxyBrowser 本地 API Token",
     "ANT_BROWSER_API_KEY": "Ant Browser 本地 Launch API Key",
     "PLAN_CHECK_PROXY": "套餐查询专用代理（可能包含认证信息）",
+    "PLAN_CHECK_UPSTREAM_PROXY": "套餐查询本地上游代理地址（用于代理链）",
+    "PROXY_POOL_UPSTREAM_PROXY": "代理池本地上游代理地址（用于代理链）",
     "QQ_IMAP_PASSWORD": "QQ 邮箱 IMAP 授权码（不是 QQ 密码）",
     "GPTMAIL_API_KEY": "GPTMail API Key",
     "CLOUDFLARE_API_KEY": "Cloudflare Worker 临时邮箱 API Key / ADMIN_PASSWORD",
@@ -141,6 +145,7 @@ def write_env_values(updates: dict[str, str]) -> list[str]:
     out_lines: list[str] = []
     key_re = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
+    seen_updated: set[str] = set()
     for line in existing_lines:
         m = key_re.match(line)
         if not m:
@@ -150,6 +155,11 @@ def write_env_values(updates: dict[str, str]) -> list[str]:
         if key in remaining:
             out_lines.append(f"{key}={_escape_env_value(remaining.pop(key))}")
             written.append(key)
+            seen_updated.add(key)
+        elif key in updates and key in seen_updated:
+            # Collapse duplicate keys being edited so no later stale value can
+            # shadow the value the user just saved.
+            continue
         else:
             out_lines.append(line)
 
@@ -214,6 +224,8 @@ def env_value(key: str, default=None, vtype: str | None = None):
     if str(raw).strip() == "":
         if vtype == "list_str_multiline" and key in EXPLICIT_EMPTY_LIST_ENV_KEYS:
             return []
+        if vtype == "str" and key in EXPLICIT_EMPTY_STRING_ENV_KEYS:
+            return ""
         return default
     try:
         return _coerce_env_value(raw, default, vtype)

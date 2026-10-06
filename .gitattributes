@@ -1,0 +1,2 @@
+# Captured SDK integrity is checked against the upstream LF bytes.
+sentinel/sdk.js text eol=lf

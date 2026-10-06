@@ -21,6 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Ant Browser Driver](./ant-browser-driver.md) | Local profile Launch API and Selenium CDP contract | Active |
 | [Paylink Service Contract](./paylink-service.md) | Local OPLL2 facade, provider registry, and SSE integration | Active |
+| [Upstream Integration](./upstream-integration.md) | Local extension preservation and auto-merge compatibility contracts | Active |
 
 ---
 
