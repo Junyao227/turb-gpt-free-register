@@ -23,3 +23,7 @@
 ## Finalization
 Complete a local merge commit after verification, then start port 5001 for runtime verification.
 Baseline safety branch: codex/pre-upstream-merge-20261006. Remote publication remains out of scope.
+
+Completed merge commit: d1e9d99. Verified upstream/main is an ancestor of HEAD.
+Runtime: 127.0.0.1:5001 listening under PID 9984; /login returned HTTP 200.
+Unrelated pelican-cycle.html remains untracked and untouched.
