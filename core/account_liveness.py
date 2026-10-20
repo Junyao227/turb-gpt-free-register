@@ -476,6 +476,12 @@ def _login_via_reauth(
     dead_code = detect_account_unusable_text(final_url)
     if dead_code:
         raise AccountUnusableError(f"账号已废弃（{dead_code}）", error_code=dead_code)
+    # 与 2FA 设置流程保持一致：仅跟随 authorize URL 时服务端常常只渲染
+    # email-verification 页面而不真正投递邮件（复用 accessToken 的 reauth
+    # 场景尤其明显），必须显式 GET /api/accounts/email-otp/send，否则
+    # 后面的 wait_for_otp 永远等不到新验证码。
+    send_email_otp(session)
+    logger.info("[查活] 已显式触发邮箱 OTP 发送")
     human_delay("navigate")
     logger.info("[查活] 已跟随 reauth authorize URL，开始等待邮箱 OTP")
     continue_url = _validate_reauth_with_retry(
